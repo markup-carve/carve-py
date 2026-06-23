@@ -1,0 +1,24 @@
+[package]
+name = "python-carve"
+version = "0.1.0"
+edition = "2021"
+description = "Python bindings (PyO3) for the Carve markup language, over the carve-rs engine."
+license = "MIT"
+repository = "https://github.com/markup-carve/python-carve"
+
+[lib]
+# The compiled Python extension module is named `carve`.
+name = "carve"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.27", features = ["abi3-py38", "extension-module"] }
+
+# --- Carve engine dependency ---------------------------------------------
+# Renamed to `carve_rs` in Rust code (via `package = "carve"`) so it does not
+# collide with our own `carve` #[pymodule].
+carve_rs = { package = "carve", git = "https://github.com/markup-carve/carve-rs" }
+#
+# For local development against a sibling checkout, swap the line above for a
+# path dependency:
+# carve_rs = { package = "carve", path = "../carve-rs" }

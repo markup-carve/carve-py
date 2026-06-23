@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mkdocs-carve-proof"
+version = "0.1.0"
+description = "Proof-of-concept MkDocs plugin rendering Carve (.crv) pages via python-carve."
+requires-python = ">=3.8"
+dependencies = ["mkdocs>=1.5", "carve"]
+
+[project.entry-points."mkdocs.plugins"]
+carve = "mkdocs_carve:CarvePlugin"
+
+[tool.setuptools]
+py-modules = ["mkdocs_carve"]

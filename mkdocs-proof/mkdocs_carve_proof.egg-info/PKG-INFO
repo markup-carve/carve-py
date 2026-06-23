@@ -1,0 +1,7 @@
+Metadata-Version: 2.4
+Name: mkdocs-carve-proof
+Version: 0.1.0
+Summary: Proof-of-concept MkDocs plugin rendering Carve (.crv) pages via python-carve.
+Requires-Python: >=3.8
+Requires-Dist: mkdocs>=1.5
+Requires-Dist: carve

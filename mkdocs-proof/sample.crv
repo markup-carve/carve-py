@@ -1,0 +1,11 @@
+# Carve in MkDocs
+
+This page is written in *Carve* and rendered by /python-carve/.
+
+- It supports lists
+- And `inline code`
+- And [links](https://markup-carve.github.io/carve/)
+
+| feature | works |
+|---------|-------|
+| tables  | yes   |

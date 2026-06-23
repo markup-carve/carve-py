@@ -1,0 +1,2 @@
+[mkdocs.plugins]
+carve = mkdocs_carve:CarvePlugin
