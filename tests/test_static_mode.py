@@ -13,12 +13,13 @@ MERMAID = "``` mermaid\ngraph TD; A-->B;\n```"
 MATH = "``` math\n\\int_0^1 x^2 dx\n```"
 
 
-def test_details_static_flattens_to_section():
-    # Static mode flattens the interactive <details> to a self-contained
-    # <section> (no client toggle needed for print / PDF / archival).
+def test_details_static_keeps_native_details_open():
+    # Static mode does NOT flatten the disclosure: it stays a native <details>
+    # element and only gains the `open` boolean attribute so the body is visible
+    # without client interaction (print / PDF / archival). Mirrors carve-rs.
     out = carve.to_html(DETAILS, extensions=["details"], mode="static")
-    assert '<section class="details">' in out
-    assert "<details>" not in out
+    assert "<details open" in out
+    assert '<section class="details">' not in out
 
 
 def test_details_interactive_keeps_details_element():
@@ -126,4 +127,4 @@ def test_unknown_renderer_key_raises_value_error():
 
 def test_to_html_with_extensions_supports_static_mode():
     out = carve.to_html_with_extensions(DETAILS, ["details"], mode="static")
-    assert '<section class="details">' in out
+    assert "<details open" in out
