@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Guard against panic = "abort" (preserves FFI catch_unwind safety)
+        # PyO3 turns Rust panics into Python exceptions via catch_unwind, which
+        # only works under panic = "unwind". This step fails the build if any
+        # tracked Cargo.toml sets panic = "abort".
+        run: bash scripts/check-panic-unwind.sh
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo check
+        run: cargo check
