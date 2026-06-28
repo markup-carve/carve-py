@@ -23,13 +23,14 @@ crate-type = ["cdylib"]
 pyo3 = { version = "0.27", features = ["abi3-py38", "extension-module"] }
 
 # --- Carve engine dependency ---------------------------------------------
-# Renamed to `carve_rs` in Rust code (via `package = "carve"`) so it does not
-# collide with our own `carve` #[pymodule].
+# Renamed to `carve_rs` in Rust code (via `package = "carve-lang"`) so it does
+# not collide with our own `carve` #[pymodule]. The crate is published as
+# `carve-lang` (the name `carve` was taken on crates.io).
 #
 # The static render-mode API (Mode::Static, StaticRenderers, with_mode/
 # with_renderers) is now merged on carve-rs main, so we track main directly.
-carve_rs = { package = "carve", git = "https://github.com/markup-carve/carve-rs", branch = "main" }
+carve_rs = { package = "carve-lang", git = "https://github.com/markup-carve/carve-rs", branch = "main" }
 #
 # For local development against a sibling checkout, swap the line above for a
 # path dependency:
-# carve_rs = { package = "carve", path = "../carve-rs" }
+# carve_rs = { package = "carve-lang", path = "../carve-rs" }
