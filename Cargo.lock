@@ -9,9 +9,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
-name = "carve"
+name = "carve-lang"
 version = "0.1.0"
-source = "git+https://github.com/markup-carve/carve-rs?branch=main#09c64118223c1574d136c308cfe2a70df8ab5128"
+source = "git+https://github.com/markup-carve/carve-rs?branch=main#0a782d214b225366a31b7ad71fea88b9da467298"
 
 [[package]]
 name = "heck"
@@ -129,7 +129,7 @@ dependencies = [
 name = "python-carve"
 version = "0.1.0"
 dependencies = [
- "carve",
+ "carve-lang",
  "pyo3",
 ]
 
