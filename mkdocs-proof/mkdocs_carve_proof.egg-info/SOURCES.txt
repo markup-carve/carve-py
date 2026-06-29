@@ -1,8 +1,0 @@
-mkdocs_carve.py
-pyproject.toml
-mkdocs_carve_proof.egg-info/PKG-INFO
-mkdocs_carve_proof.egg-info/SOURCES.txt
-mkdocs_carve_proof.egg-info/dependency_links.txt
-mkdocs_carve_proof.egg-info/entry_points.txt
-mkdocs_carve_proof.egg-info/requires.txt
-mkdocs_carve_proof.egg-info/top_level.txt

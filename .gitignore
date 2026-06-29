@@ -5,3 +5,5 @@
 /_site/
 mkdocs-proof/_site/
 .venv/
+
+*.egg-info/

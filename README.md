@@ -38,7 +38,7 @@ print(carve.__version__)
 
 # Core conversion (no extensions)
 html = carve.to_html("# Hello *world*")
-# -> '<h1 id="Hello">Hello <strong>world</strong></h1>\n'
+# -> '<section id="Hello-world">\n  <h1>Hello <strong>world</strong></h1>\n</section>'
 
 # Inline emphasis: /italic/ and *bold*
 carve.to_html("/italic/ and *bold*")
@@ -70,6 +70,7 @@ The string passed in `extensions=[...]` maps to a carve-rs extension:
 | `details`            | collapsible `<details>` blocks                       |
 | `external_links`     | mark external links (rel/target)                     |
 | `fenced_render`      | render fenced blocks of a target language (mermaid)  |
+| `fenced_render_chart`| render fenced `chart` blocks (Chart.js)              |
 | `heading_permalinks` | add permalink anchors to headings                    |
 | `list_table`         | build tables from nested lists                        |
 | `math_block`         | fenced math blocks                                   |
@@ -77,10 +78,4 @@ The string passed in `extensions=[...]` maps to a carve-rs extension:
 | `tab_normalize`      | normalize tab indentation                            |
 | `wikilinks`          | `[[wiki style]]` links                               |
 | `citations`          | citation references                                  |
-
-## Switching the engine dependency for publishing
-
-`Cargo.toml` uses a local `path` dependency on carve-rs so it builds in this
-workspace. To build a publishable wheel, comment out the `path` line and
-uncomment the `git` line (the public API is identical, so no Rust changes are
-needed).
+| `code-callouts`      | numbered callouts in fenced code blocks              |
