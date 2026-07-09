@@ -1,6 +1,6 @@
-"""Minimal proof-of-concept MkDocs plugin for Carve (`.crv` / `.carve`) pages.
+"""Minimal proof-of-concept MkDocs plugin for Carve (`.crv`) pages.
 
-This is a thin BasePlugin that intercepts `.crv` / `.carve` source pages and
+This is a thin BasePlugin that intercepts `.crv` source pages and
 converts them to HTML with `carve.to_html` before MkDocs renders them. It is a
 demonstration of how cheaply python-carve unblocks the MkDocs ecosystem, not a
 production plugin.
@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import carve
 
-CARVE_SUFFIXES = (".crv", ".carve")
+CARVE_SUFFIXES = (".crv",)
 
 
 def convert_carve(source: str, extensions=None) -> str:
@@ -30,7 +30,7 @@ try:
     from mkdocs.structure.files import Files
 
     class CarvePlugin(BasePlugin):
-        """Render `.crv` / `.carve` pages through carve-rs via python-carve.
+        """Render `.crv` pages through carve-rs via python-carve.
 
         Two hooks:
 

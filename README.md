@@ -2,7 +2,7 @@
 
 Native Python bindings for the [Carve](https://markup-carve.github.io/carve/)
 markup language. This package is a thin [PyO3](https://pyo3.rs) binding over the
-Rust reference implementation [carve-rs](https://github.com/markup-carve/carve-rs),
+Rust implementation [carve-rs](https://github.com/markup-carve/carve-rs),
 so the parser is not reimplemented in Python: every conversion delegates to the
 same engine the Rust CLI and WASM builds use. Output is byte-identical to
 carve-rs for the same input.

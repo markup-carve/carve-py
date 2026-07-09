@@ -16,7 +16,7 @@ import subprocess
 import carve
 import pytest
 
-CARVE_BIN = "/media/mark/data/work/git/carve-rs/target/release/carve"
+CARVE_BIN = os.environ.get("CARVE_BIN", "../carve-rs/target/release/carve")
 
 SAMPLES = [
     "# Hello *world*\n",

@@ -12,7 +12,7 @@ Difficulty scale: Trivial < Easy < Moderate < Involved.
 A `mkdocs.plugins.BasePlugin` that:
 
 - registers via the `mkdocs.plugins` entry point,
-- in `on_files`, marks `.crv` / `.carve` files as documentation pages and
+- in `on_files`, marks `.crv` files as documentation pages and
   gives them an `.html` destination,
 - in `on_page_markdown`, calls `carve.to_html(source)` and returns the HTML
   fragment (Markdown passes raw HTML through).
