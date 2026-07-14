@@ -132,3 +132,33 @@ def test_to_plain_text():
 def test_to_ansi():
     out = carve.to_ansi("# Hi")
     assert "Hi" in out
+
+
+# --- Engine language surface ---------------------------------------------
+#
+# These exercise the carve-rs engine through the binding's public API, so a
+# stale engine pin in Cargo.lock shows up as a test failure rather than as a
+# silently outdated language.
+
+def test_superscript_and_subscript_are_braced_only():
+    # Bare `^x^` / `,x,` are literal text; only the braced forms mark up.
+    literal = carve.to_html("a ^2^ b and H,2,O")
+    assert "<sup>" not in literal
+    assert "<sub>" not in literal
+
+    marked = carve.to_html("x{^2^} and H{,2,}O")
+    assert "<sup>2</sup>" in marked
+    assert "<sub>2</sub>" in marked
+
+
+def test_symbol_inline_is_recognized():
+    # An unmapped symbol renders its `:name:` source, but it is a real Symbol
+    # node - attaching attributes proves it parsed as one rather than as text.
+    assert '<span class="emoji">:smile:</span>' in carve.to_html(":smile:{.emoji}")
+
+
+def test_symbol_word_boundary_guard():
+    # A `:` preceded by a word character does not open a symbol.
+    out = carve.to_html("a:b:c and 10:30: and me@example.com")
+    assert "<span" not in out
+    assert "a:b:c" in out
