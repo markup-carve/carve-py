@@ -162,3 +162,59 @@ def test_symbol_word_boundary_guard():
     out = carve.to_html("a:b:c and 10:30: and me@example.com")
     assert "<span" not in out
     assert "a:b:c" in out
+
+
+# --- symbols map -------------------------------------------------------------
+
+
+def test_symbols_map_renders_mapped_value():
+    out = carve.to_html("Ship it :rocket:", symbols={"rocket": "🚀"})
+    assert "Ship it 🚀" in out
+    assert ":rocket:" not in out
+
+
+def test_symbols_map_works_alongside_extensions():
+    out = carve.to_html(
+        "Ship it :rocket:", extensions=["autolink"], symbols={"rocket": "🚀"}
+    )
+    assert "🚀" in out
+    out = carve.to_html_with_extensions(
+        "Ship it :rocket:", ["autolink"], symbols={"rocket": "🚀"}
+    )
+    assert "🚀" in out
+
+
+def test_symbols_map_plus_one_is_a_valid_name():
+    assert "nice 👍" in carve.to_html("nice :+1:", symbols={"+1": "👍"})
+
+
+def test_unmapped_symbol_stays_literal_with_a_map_active():
+    out = carve.to_html(":rocket: and :shrug:", symbols={"rocket": "🚀"})
+    assert "🚀" in out
+    assert ":shrug:" in out
+
+
+def test_symbols_map_does_not_defeat_the_word_boundary_guard():
+    # Each of these names WOULD map if the leading word-boundary guard were lost.
+    out = carve.to_html(
+        "a:b:c and 10:30: and me@example.com",
+        symbols={"b": "MAPPED-B", "30": "MAPPED-30", "example": "MAPPED-EX"},
+    )
+    assert "a:b:c" in out
+    assert "10:30:" in out
+    assert "me@example.com" in out
+    assert "MAPPED-" not in out
+
+
+def test_symbol_value_is_trusted_raw_output_not_escaped():
+    # Documented contract: a symbol value is inserted RAW into the target format
+    # (same trust class as the `renderers` map), so markup comes through as
+    # markup. Never build a symbols map from untrusted input.
+    out = carve.to_html(":bold:", symbols={"bold": "<b>x</b>"})
+    assert "<b>x</b>" in out
+    assert "&lt;b&gt;" not in out
+
+
+def test_symbols_map_rejects_non_string_values():
+    with pytest.raises(TypeError):
+        carve.to_html(":n:", symbols={"n": 1})

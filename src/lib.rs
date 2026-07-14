@@ -5,6 +5,7 @@
 //!   - `carve.to_html(source, extensions=[...])`     named extensions
 //!   - `carve.to_html(source, mode='static')`        static render mode
 //!   - `carve.to_html(source, renderers={...})`      build-time renderers
+//!   - `carve.to_html(source, symbols={...})`        `:name:` symbol map
 //!   - `carve.to_html_with_extensions(source, exts)` explicit variant
 //!   - `carve.to_markdown(source)` / `to_plain_text(source)` / `to_ansi(source)`
 //!   - `carve.extensions()`                          list of supported names
@@ -190,8 +191,23 @@ fn build_renderers(renderers: &Bound<'_, PyDict>) -> PyResult<StaticRenderers> {
     Ok(out)
 }
 
+/// Lower a Python `symbols` dict into owned `(name, value)` pairs.
+///
+/// Keys and values must both be `str`; anything else raises `TypeError` from
+/// the extraction, so a mistyped map fails fast instead of silently dropping
+/// entries.
+fn build_symbols(symbols: &Bound<'_, PyDict>) -> PyResult<Vec<(String, String)>> {
+    let mut out = Vec::with_capacity(symbols.len());
+    for (key, value) in symbols.iter() {
+        let name: String = key.extract()?;
+        let value: String = value.extract()?;
+        out.push((name, value));
+    }
+    Ok(out)
+}
+
 /// Run `f` with an `Options` that borrows the given owned extensions, applying
-/// the requested render mode and static renderers.
+/// the requested render mode, static renderers and symbol map.
 ///
 /// `Options<'a>` holds `&'a dyn CarveExtension`, so the owned boxes must
 /// outlive the borrow. Both live in this single stack frame, satisfying the
@@ -201,6 +217,7 @@ fn render<F>(
     names: &[String],
     mode: Mode,
     renderers: StaticRenderers,
+    symbols: &[(String, String)],
     f: F,
 ) -> PyResult<String>
 where
@@ -210,6 +227,9 @@ where
     let mut options = Options::new().with_mode(mode).with_renderers(renderers);
     for ext in &owned {
         options = options.with_extension(ext.as_ref());
+    }
+    for (name, value) in symbols {
+        options = options.with_symbol(name.clone(), value.clone());
     }
     Ok(f(source, &options))
 }
@@ -237,20 +257,37 @@ fn resolve_mode_and_renderers(
 /// `"static"`; `renderers` is an optional dict of build-time renderer callables
 /// (keys `"mermaid"` / `"chart"` -> `(str) -> str`, `"math"` -> `(str, bool) ->
 /// str`) consulted only on the static HTML path.
+///
+/// `symbols` is an optional `{name: value}` dict: a `:name:` symbol whose name
+/// is in the map renders the mapped value, an unmapped one stays literal
+/// `:name:` text.
+///
+/// SECURITY: a mapped symbol value is inserted as TRUSTED RAW output in the
+/// target format - it is NOT escaped, the same trust class as the `renderers`
+/// map. `symbols={"b": "<b>x</b>"}` emits a real `<b>` element. This is
+/// deliberate: processor configuration is trusted. NEVER build a symbols map
+/// out of untrusted / user-supplied input.
 #[pyfunction]
-#[pyo3(signature = (source, extensions = None, mode = "interactive", renderers = None))]
+#[pyo3(signature = (source, extensions = None, mode = "interactive", renderers = None, symbols = None))]
 fn to_html(
     source: &str,
     extensions: Option<Vec<String>>,
     mode: &str,
     renderers: Option<Bound<'_, PyDict>>,
+    symbols: Option<Bound<'_, PyDict>>,
 ) -> PyResult<String> {
     let (parsed_mode, static_renderers) = resolve_mode_and_renderers(mode, renderers.as_ref())?;
+    let symbol_pairs = match symbols.as_ref() {
+        Some(dict) => build_symbols(dict)?,
+        None => Vec::new(),
+    };
     // The fast no-options path only applies in interactive mode with no
-    // renderers and no extensions; anything else must go through `render`.
+    // renderers, no symbols and no extensions; anything else must go through
+    // `render`.
     let names = extensions.unwrap_or_default();
     if names.is_empty()
         && parsed_mode == Mode::Interactive
+        && symbol_pairs.is_empty()
         && static_renderers.mermaid.is_none()
         && static_renderers.chart.is_none()
         && static_renderers.math.is_none()
@@ -262,27 +299,35 @@ fn to_html(
         &names,
         parsed_mode,
         static_renderers,
+        &symbol_pairs,
         carve_rs::to_html_with_options,
     )
 }
 
 /// Convert Carve source to HTML with an explicit (required) extension list.
 ///
-/// Supports the same `mode` / `renderers` keywords as [`to_html`].
+/// Supports the same `mode` / `renderers` / `symbols` keywords as [`to_html`]
+/// (including the trusted-raw contract on symbol values).
 #[pyfunction]
-#[pyo3(signature = (source, extensions, mode = "interactive", renderers = None))]
+#[pyo3(signature = (source, extensions, mode = "interactive", renderers = None, symbols = None))]
 fn to_html_with_extensions(
     source: &str,
     extensions: Vec<String>,
     mode: &str,
     renderers: Option<Bound<'_, PyDict>>,
+    symbols: Option<Bound<'_, PyDict>>,
 ) -> PyResult<String> {
     let (parsed_mode, static_renderers) = resolve_mode_and_renderers(mode, renderers.as_ref())?;
+    let symbol_pairs = match symbols.as_ref() {
+        Some(dict) => build_symbols(dict)?,
+        None => Vec::new(),
+    };
     render(
         source,
         &extensions,
         parsed_mode,
         static_renderers,
+        &symbol_pairs,
         carve_rs::to_html_with_options,
     )
 }
@@ -304,6 +349,7 @@ fn to_markdown(source: &str, extensions: Option<Vec<String>>) -> PyResult<String
         &extensions.unwrap(),
         Mode::Interactive,
         StaticRenderers::default(),
+        &[],
         carve_rs::to_markdown_with_options,
     )
 }
@@ -320,6 +366,7 @@ fn to_plain_text(source: &str, extensions: Option<Vec<String>>) -> PyResult<Stri
         &extensions.unwrap(),
         Mode::Interactive,
         StaticRenderers::default(),
+        &[],
         carve_rs::to_plain_text_with_options,
     )
 }
@@ -336,6 +383,7 @@ fn to_ansi(source: &str, extensions: Option<Vec<String>>) -> PyResult<String> {
         &extensions.unwrap(),
         Mode::Interactive,
         StaticRenderers::default(),
+        &[],
         carve_rs::to_ansi_with_options,
     )
 }
