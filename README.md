@@ -49,6 +49,10 @@ html = carve.to_html(source, extensions=["math_block", "list_table"])
 # Dedicated explicit-list variant
 html = carve.to_html_with_extensions(source, ["autolink"])
 
+# Map `:name:` symbols to their values
+carve.to_html("Ship it :rocket:", symbols={"rocket": "🚀"})
+# -> '<p>Ship it 🚀</p>'
+
 # Other renderers
 carve.to_markdown(source)
 carve.to_plain_text(source)
@@ -59,6 +63,27 @@ carve.extensions()
 ```
 
 Passing an unknown extension name raises `ValueError`.
+
+## Symbols
+
+A `:name:` symbol renders its literal `:name:` source unless the name is in the
+**symbols map** passed as the `symbols=` keyword (supported by `to_html` and
+`to_html_with_extensions`):
+
+```python
+carve.to_html("Ship it :rocket: :shrug:", symbols={"rocket": "🚀"})
+# -> '<p>Ship it 🚀 :shrug:</p>'   (an unmapped name stays literal)
+```
+
+The leading word-boundary guard is unaffected by an active map: `a:b:c`,
+`10:30:` and `me@example.com` never become symbols.
+
+> **Security: symbol values are TRUSTED RAW output.**
+> A mapped value is inserted into the output **unescaped** - the same trust
+> class as a `renderers` callable. `symbols={"b": "<b>x</b>"}` emits a real
+> `<b>` element, not escaped text. This is deliberate (processor configuration
+> is trusted). **Never build a symbols map out of untrusted / user-supplied
+> input.**
 
 ## Supported extensions
 
