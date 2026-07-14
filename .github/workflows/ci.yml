@@ -22,3 +22,21 @@ jobs:
 
       - name: cargo check
         run: cargo check
+
+      # The Python test suite is the ONLY thing that exercises the binding's
+      # actual behavior -- cargo check merely proves it compiles. Without this
+      # step the engine can drift underneath us silently: the carve-rs pin sat
+      # months behind (missing braced-only sup/sub and the :name: symbol) and
+      # CI stayed green throughout.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build the extension in-place
+        run: |
+          pip install maturin pytest
+          maturin develop --release
+
+      - name: pytest
+        run: pytest -q
