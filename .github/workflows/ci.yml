@@ -39,7 +39,7 @@ jobs:
         run: |
           pip install maturin pytest
           maturin build --release --out dist
-          pip install --find-links dist --force-reinstall carve
+          pip install --find-links dist --force-reinstall carve-lang
 
       - name: pytest
         run: pytest -q
