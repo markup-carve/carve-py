@@ -33,10 +33,13 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Build the extension in-place
+      # `maturin develop` requires an active virtualenv; build a wheel and
+      # install it instead, which needs no environment juggling on CI.
+      - name: Build and install the wheel
         run: |
           pip install maturin pytest
-          maturin develop --release
+          maturin build --release --out dist
+          pip install --find-links dist --force-reinstall carve
 
       - name: pytest
         run: pytest -q
