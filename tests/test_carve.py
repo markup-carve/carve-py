@@ -218,3 +218,30 @@ def test_symbol_value_is_trusted_raw_output_not_escaped():
 def test_symbols_map_rejects_non_string_values():
     with pytest.raises(TypeError):
         carve.to_html(":n:", symbols={"n": 1})
+
+
+def test_fenced_render_presets_are_exposed_by_name():
+    # Every FencedRender preset is selectable by name (the diagram gap that
+    # blocked PlantUML/Graphviz/D2 in the bindings).
+    for name in (
+        "fenced_render_plantuml",
+        "fenced_render_graphviz",
+        "fenced_render_d2",
+        "fenced_render_wavedrom",
+        "fenced_render_vega_lite",
+        "fenced_render_abc",
+    ):
+        assert name in carve.extensions()
+
+
+def test_plantuml_preset_emits_pre_class_plantuml():
+    for lang in ("plantuml", "puml"):
+        out = carve.to_html(
+            f"``` {lang}\nA -> B\n```", extensions=["fenced_render_plantuml"]
+        )
+        assert '<pre class="plantuml">' in out
+
+
+def test_graphviz_preset_claims_dot_and_graphviz():
+    out = carve.to_html("``` dot\na -> b\n```", extensions=["fenced_render_graphviz"])
+    assert '<pre class="graphviz">' in out

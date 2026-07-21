@@ -63,6 +63,19 @@ fn build_extension(name: &str) -> PyResult<Box<dyn CarveExtension>> {
         // Chart.js preset (JSON mode); its static path consults
         // `renderers={'chart': ...}`, else degrades to the JSON source.
         "fenced_render_chart" => Box::new(FencedRender::chart()),
+        // PlantUML preset (text mode, claims `plantuml`/`puml`). No browser
+        // library, so it is client-rendered via a Kroki server.
+        "fenced_render_plantuml" => Box::new(FencedRender::plantuml()),
+        // Graphviz preset (text mode, claims `dot`/`graphviz`).
+        "fenced_render_graphviz" => Box::new(FencedRender::graphviz()),
+        // D2 preset (text mode).
+        "fenced_render_d2" => Box::new(FencedRender::d2()),
+        // WaveDrom preset (text mode).
+        "fenced_render_wavedrom" => Box::new(FencedRender::wavedrom()),
+        // Vega-Lite preset (JSON mode).
+        "fenced_render_vega_lite" => Box::new(FencedRender::vega_lite()),
+        // ABC music-notation preset (text mode).
+        "fenced_render_abc" => Box::new(FencedRender::abc()),
         "heading_permalinks" => Box::new(HeadingPermalinks::new()),
         "list_table" => Box::new(ListTable::new()),
         "math_block" => Box::new(MathBlock::new()),
@@ -88,6 +101,12 @@ const SUPPORTED: &[&str] = &[
     "external_links",
     "fenced_render",
     "fenced_render_chart",
+    "fenced_render_plantuml",
+    "fenced_render_graphviz",
+    "fenced_render_d2",
+    "fenced_render_wavedrom",
+    "fenced_render_vega_lite",
+    "fenced_render_abc",
     "heading_permalinks",
     "list_table",
     "math_block",
@@ -168,28 +187,48 @@ fn wrap_math(callable: Py<PyAny>) -> Box<dyn Fn(&str, bool) -> String + 'static>
 
 /// Build a [`StaticRenderers`] from a Python dict of callables.
 ///
-/// Recognized keys: `"mermaid"` / `"chart"` (callables `(str) -> str`) and
-/// `"math"` (callable `(str, bool) -> str`). Unknown keys raise `ValueError`.
-/// A missing key leaves that renderer absent, so the matching static path
-/// degrades to source.
+/// The `"math"` key takes a callable `(str, bool) -> str`. Every other key is a
+/// **diagram fence css class** (`"mermaid"`, `"chart"`, `"plantuml"`,
+/// `"graphviz"`, `"d2"`, ...) mapped to a callable `(str) -> str`; the engine
+/// keys diagram renderers by css class, so a static render of that fence
+/// consults the matching entry (else degrades to source).
 fn build_renderers(renderers: &Bound<'_, PyDict>) -> PyResult<StaticRenderers> {
     let mut out = StaticRenderers::default();
     for (key, value) in renderers.iter() {
         let name: String = key.extract()?;
         let callable: Py<PyAny> = value.unbind();
-        match name.as_str() {
-            "mermaid" => out.mermaid = Some(wrap_diagram(callable)),
-            "chart" => out.chart = Some(wrap_diagram(callable)),
-            "math" => out.math = Some(wrap_math(callable)),
-            other => {
-                return Err(PyValueError::new_err(format!(
-                    "unknown renderer key: {other:?} (supported: \"mermaid\", \"chart\", \"math\")"
-                )));
-            }
+        if name == "math" {
+            out.math = Some(wrap_math(callable));
+        } else if DIAGRAM_RENDERER_KEYS.contains(&name.as_str()) {
+            // Keyed by the fence css class the preset emits.
+            out.diagrams.insert(name, wrap_diagram(callable));
+        } else {
+            return Err(PyValueError::new_err(format!(
+                "unknown renderer key: {name:?} (supported: \"math\", {})",
+                DIAGRAM_RENDERER_KEYS
+                    .iter()
+                    .map(|k| format!("{k:?}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )));
         }
     }
     Ok(out)
 }
+
+/// Diagram-renderer keys accepted by `renderers={...}`: the fence css class each
+/// FencedRender preset emits. Validated so a typo fails fast instead of
+/// silently doing nothing.
+const DIAGRAM_RENDERER_KEYS: &[&str] = &[
+    "mermaid",
+    "chart",
+    "plantuml",
+    "graphviz",
+    "d2",
+    "wavedrom",
+    "abc",
+    "vega-lite",
+];
 
 /// Lower a Python `symbols` dict into owned `(name, value)` pairs.
 ///
@@ -288,8 +327,7 @@ fn to_html(
     if names.is_empty()
         && parsed_mode == Mode::Interactive
         && symbol_pairs.is_empty()
-        && static_renderers.mermaid.is_none()
-        && static_renderers.chart.is_none()
+        && static_renderers.diagrams.is_empty()
         && static_renderers.math.is_none()
     {
         return Ok(carve_rs::to_html(source));

@@ -4,7 +4,8 @@ from typing import Callable, Dict, List, Optional, Union
 
 __version__: str
 
-# A static-render callable. Diagram renderers (mermaid / chart) take the
+# A static-render callable. Diagram renderers (mermaid, chart, plantuml,
+# graphviz, d2, wavedrom, vega-lite, abc), keyed by fence css class, take the
 # construct source and return HTML: ``(str) -> str``. The math renderer takes
 # the TeX source and a ``display`` flag (``True`` for block/display math,
 # ``False`` for inline) and returns HTML: ``(str, bool) -> str``.
@@ -28,9 +29,11 @@ def to_html(
     self-contained HTML (no client scripts).
 
     ``renderers`` is an optional dict of build-time renderer callables consulted
-    only on the static HTML path. Keys: ``"mermaid"`` / ``"chart"`` (callables
-    ``(str) -> str``) and ``"math"`` (callable ``(str, bool) -> str``). An
-    unknown key raises ``ValueError``. A missing renderer degrades that
+    only on the static HTML path. Keys are a diagram fence css class
+    (``"mermaid"``, ``"chart"``, ``"plantuml"``, ``"graphviz"``, ``"d2"``,
+    ``"wavedrom"``, ``"vega-lite"``, ``"abc"``; callables ``(str) -> str``) or
+    ``"math"`` (callable ``(str, bool) -> str``). An unknown key raises
+    ``ValueError``. A missing renderer degrades that
     construct to its source (never blank). A renderer that raises or returns a
     non-string also degrades to source.
 

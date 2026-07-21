@@ -11,7 +11,7 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 [[package]]
 name = "carve-lang"
 version = "0.1.0"
-source = "git+https://github.com/markup-carve/carve-rs?branch=main#6887f97477ffba5d3b48875518e328ae8acb429e"
+source = "git+https://github.com/markup-carve/carve-rs?branch=main#21e6a9d9ade1214c8653069f66c0362efb92d9e3"
 
 [[package]]
 name = "heck"
