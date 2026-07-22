@@ -96,6 +96,12 @@ The string passed in `extensions=[...]` maps to a carve-rs extension:
 | `external_links`     | mark external links (rel/target)                     |
 | `fenced_render`      | render fenced blocks of a target language (mermaid)  |
 | `fenced_render_chart`| render fenced `chart` blocks (Chart.js)              |
+| `fenced_render_plantuml` | render `plantuml`/`puml` blocks (Kroki client)   |
+| `fenced_render_graphviz` | render `dot`/`graphviz` blocks                   |
+| `fenced_render_d2`   | render `d2` blocks                                   |
+| `fenced_render_wavedrom` | render `wavedrom` blocks                         |
+| `fenced_render_vega_lite`| render `vega-lite` blocks (Vega-Lite)            |
+| `fenced_render_abc`  | render `abc` music-notation blocks                   |
 | `heading_permalinks` | add permalink anchors to headings                    |
 | `list_table`         | build tables from nested lists                        |
 | `math_block`         | fenced math blocks                                   |
