@@ -85,6 +85,45 @@ The leading word-boundary guard is unaffected by an active map: `a:b:c`,
 > is trusted). **Never build a symbols map out of untrusted / user-supplied
 > input.**
 
+## Untrusted input
+
+Carve's normative hardening is always on and needs no argument: dangerous URL
+schemes are blanked, event-handler attributes like `onclick` are dropped, and the
+bidi override/isolate characters behind Trojan Source are removed from rendered
+text.
+
+Raw passthrough is the deliberate exception. A ` ```=html ` block or a
+`` `…`{=html} `` span renders **verbatim** by design, so it is the one thing
+input you did not author has to switch off:
+
+``` python
+html = carve.to_html(user_input, safe=True, profile="comment")
+```
+
+`safe=True` escapes those raw blocks and spans instead of emitting them. It is
+HTML-only, because HTML is the only target that can emit live markup:
+`to_markdown` escapes raw HTML, `to_plain_text` drops it, `to_ansi` keeps it as
+terminal text.
+
+`profile` restricts which constructs are allowed at all and caps input length -
+`"full"`, `"article"`, `"comment"`, `"minimal"`, or `None`. It applies to every
+target, including `to_markdown` / `to_plain_text` / `to_ansi`.
+
+An unknown profile name raises `ValueError`, and so does a **rejection** - input
+past the profile's max length, or a denied construct when the action is error:
+
+``` python
+carve.to_html("x" * 20_000, profile="minimal")
+# ValueError: Profile violations: 'document' is not allowed: max_length_exceeded (...)
+```
+
+It raises rather than returning something that looks like output: the engine's
+infallible entry point answers a rejection with an empty string, which a caller
+cannot tell from a document that legitimately rendered to nothing.
+
+Full recipe, defaults and threat model:
+[Security](https://markup-carve.github.io/carve/security).
+
 ## Supported extensions
 
 The string passed in `extensions=[...]` maps to a carve-rs extension:

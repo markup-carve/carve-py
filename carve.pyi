@@ -17,6 +17,8 @@ def to_html(
     mode: str = "interactive",
     renderers: Optional[Dict[str, Renderer]] = None,
     symbols: Optional[Dict[str, str]] = None,
+    safe: bool = False,
+    profile: Optional[str] = None,
 ) -> str:
     """Convert Carve source to HTML.
 
@@ -49,6 +51,22 @@ def to_html(
        ``symbols={"b": "<b>x</b>"}`` emits a real ``<b>`` element. This is
        deliberate: processor configuration is trusted. **Never build a symbols
        map out of untrusted / user-supplied input.**
+
+    ``safe`` escapes ``=html`` raw blocks and spans instead of emitting them.
+    Carve's normative hardening is always on and needs no argument (URL scheme
+    denylist, event-handler attributes, the Trojan-Source bidi characters); raw
+    passthrough is the deliberate exception, so it is the one thing untrusted
+    input has to switch off. It applies to HTML only, the one target that can
+    emit live markup.
+
+    ``profile`` restricts which constructs are allowed at all and caps input
+    length: ``"full"``, ``"article"``, ``"comment"``, ``"minimal"``, or ``None``
+    for no profile. An unknown name raises ``ValueError``, and so does a
+    profile REJECTION - input past the profile's max length, or a denied
+    construct when the action is error. It is an exception rather than a return
+    value because the engine's infallible entry point answers a rejection with
+    an empty string, which a caller cannot tell from a document that
+    legitimately rendered to nothing.
     """
     ...
 
@@ -58,24 +76,52 @@ def to_html_with_extensions(
     mode: str = "interactive",
     renderers: Optional[Dict[str, Renderer]] = None,
     symbols: Optional[Dict[str, str]] = None,
+    safe: bool = False,
+    profile: Optional[str] = None,
 ) -> str:
     """Convert Carve source to HTML with an explicit extension list.
 
-    Supports the same ``mode`` / ``renderers`` / ``symbols`` keywords as
-    :func:`to_html` (including the trusted-raw contract on symbol values).
+    Supports the same ``mode`` / ``renderers`` / ``symbols`` / ``safe`` /
+    ``profile`` keywords as :func:`to_html` (including the trusted-raw contract
+    on symbol values).
     """
     ...
 
-def to_markdown(source: str, extensions: Optional[List[str]] = None) -> str:
-    """Convert Carve source to Markdown (inherently static; no ``mode``)."""
+def to_markdown(
+    source: str,
+    extensions: Optional[List[str]] = None,
+    profile: Optional[str] = None,
+) -> str:
+    """Convert Carve source to Markdown (inherently static; no ``mode``).
+
+    ``profile`` behaves as in :func:`to_html`. There is no ``safe`` keyword:
+    this target escapes raw HTML unconditionally, so it can never emit live
+    markup and has nothing to switch off.
+    """
     ...
 
-def to_plain_text(source: str, extensions: Optional[List[str]] = None) -> str:
-    """Convert Carve source to plain text (inherently static; no ``mode``)."""
+def to_plain_text(
+    source: str,
+    extensions: Optional[List[str]] = None,
+    profile: Optional[str] = None,
+) -> str:
+    """Convert Carve source to plain text (inherently static; no ``mode``).
+
+    ``profile`` behaves as in :func:`to_html`; there is no ``safe`` keyword (see
+    :func:`to_markdown`).
+    """
     ...
 
-def to_ansi(source: str, extensions: Optional[List[str]] = None) -> str:
-    """Convert Carve source to ANSI-colored text (inherently static; no ``mode``)."""
+def to_ansi(
+    source: str,
+    extensions: Optional[List[str]] = None,
+    profile: Optional[str] = None,
+) -> str:
+    """Convert Carve source to ANSI-colored text (inherently static; no ``mode``).
+
+    ``profile`` behaves as in :func:`to_html`; there is no ``safe`` keyword (see
+    :func:`to_markdown`).
+    """
     ...
 
 def extensions() -> List[str]:
