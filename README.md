@@ -124,6 +124,30 @@ cannot tell from a document that legitimately rendered to nothing.
 Full recipe, defaults and threat model:
 [Security](https://markup-carve.github.io/carve/security).
 
+## Stored documents and spec versions
+
+`carve fmt --stamp` (in any Carve engine) records the spec version a document was
+last processed under. This binding reads that marker back, so a repository of
+stored `.crv` files can be checked for documents predating a breaking spec
+change:
+
+``` python
+carve.read_stamp(source)
+# {'version': '0.1', 'generated_by': 'carve-php 0.1.0'}
+
+carve.needs_review(source)   # True when the document predates this engine
+```
+
+An **unstamped** document answers `True`: its provenance is unknown, and assuming
+it is current is the unsafe direction. Both marker forms are read, and a marker
+written by any engine reads the same - the format is the contract, not any one
+API.
+
+What a version difference means is the
+[versioning contract](https://markup-carve.github.io/carve/versioning): only
+`[behavior]` changelog entries between the stamped version and yours can require
+a document change.
+
 ## Supported extensions
 
 The string passed in `extensions=[...]` maps to a carve-rs extension:

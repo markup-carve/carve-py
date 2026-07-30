@@ -489,6 +489,38 @@ fn to_ansi(
     )
 }
 
+/// Read a document's provenance marker, as written by `carve fmt --stamp`.
+///
+/// Returns a dict `{"version": ..., "generated_by": ...}`, or None when the
+/// document carries no marker - the normal case for a hand-written document,
+/// meaning "unknown" rather than "current". `generated_by` is None when the
+/// marker records no writer.
+#[pyfunction]
+fn read_stamp(py: Python<'_>, source: &str) -> PyResult<Option<Py<PyDict>>> {
+    let Some(stamp) = carve_rs::read_stamp(source) else {
+        return Ok(None);
+    };
+
+    let dict = PyDict::new(py);
+    dict.set_item("version", stamp.version)?;
+    dict.set_item("generated_by", stamp.generated_by)?;
+
+    Ok(Some(dict.unbind()))
+}
+
+/// Whether a document was last processed under an older spec version than this
+/// engine targets, so the `[behavior]` changelog entries between the two are
+/// worth reviewing.
+///
+/// An unstamped document answers True: its provenance is unknown, and assuming
+/// it is current is the unsafe direction. Pass `current_version` to compare
+/// against something other than this engine's spec version.
+#[pyfunction]
+#[pyo3(signature = (source, current_version = None))]
+fn needs_review(source: &str, current_version: Option<&str>) -> bool {
+    carve_rs::needs_review(source, current_version.unwrap_or(carve_rs::SPEC_VERSION))
+}
+
 /// Return the list of supported extension names.
 #[pyfunction]
 fn extensions() -> Vec<String> {
@@ -504,5 +536,7 @@ fn carve(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(to_plain_text, m)?)?;
     m.add_function(wrap_pyfunction!(to_ansi, m)?)?;
     m.add_function(wrap_pyfunction!(extensions, m)?)?;
+    m.add_function(wrap_pyfunction!(read_stamp, m)?)?;
+    m.add_function(wrap_pyfunction!(needs_review, m)?)?;
     Ok(())
 }
