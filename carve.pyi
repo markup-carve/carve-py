@@ -124,6 +124,31 @@ def to_ansi(
     """
     ...
 
+def read_stamp(source: str) -> Optional[Dict[str, Optional[str]]]:
+    """Read a document's provenance marker, as written by ``carve fmt --stamp``.
+
+    Returns ``{"version": ..., "generated_by": ...}``, or ``None`` when the
+    document carries no marker - the normal case for a hand-written document,
+    meaning "unknown" rather than "current". ``generated_by`` is ``None`` when
+    the marker records no writer.
+
+    Both documented forms are read (the trailing ``%%`` line and the ``%%%``
+    block), and a marker written by any Carve engine reads the same.
+    """
+    ...
+
+def needs_review(source: str, current_version: Optional[str] = None) -> bool:
+    """Whether a document predates the spec version this engine targets.
+
+    An **unstamped** document answers ``True``: its provenance is unknown, and
+    assuming it is current is the unsafe direction. Pass ``current_version`` to
+    compare against something other than this engine's spec version.
+
+    See https://markup-carve.github.io/carve/versioning for what a version
+    difference means for a stored document.
+    """
+    ...
+
 def extensions() -> List[str]:
     """Return the list of supported extension names."""
     ...
