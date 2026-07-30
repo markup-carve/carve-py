@@ -15,8 +15,8 @@
 
 use carve_rs::{
     Autolink, CarveExtension, Citations, CodeCallouts, Details, ExternalLinks, FencedRender,
-    HeadingPermalinks, ListTable, MathBlock, Mode, Options, Spoiler, StaticRenderers, TabNormalize,
-    Wikilinks,
+    HeadingPermalinks, ListTable, MathBlock, Mode, Options, Profile, ProfileViolationError,
+    Spoiler, StaticRenderers, TabNormalize, Wikilinks,
 };
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -251,16 +251,19 @@ fn build_symbols(symbols: &Bound<'_, PyDict>) -> PyResult<Vec<(String, String)>>
 /// `Options<'a>` holds `&'a dyn CarveExtension`, so the owned boxes must
 /// outlive the borrow. Both live in this single stack frame, satisfying the
 /// lifetime without leaking.
+#[allow(clippy::too_many_arguments)]
 fn render<F>(
     source: &str,
     names: &[String],
     mode: Mode,
     renderers: StaticRenderers,
     symbols: &[(String, String)],
+    safe: bool,
+    profile: Option<&str>,
     f: F,
 ) -> PyResult<String>
 where
-    F: FnOnce(&str, &Options<'_>) -> String,
+    F: FnOnce(&str, &Options<'_>) -> Result<String, ProfileViolationError>,
 {
     let owned = boxed_extensions(names)?;
     let mut options = Options::new().with_mode(mode).with_renderers(renderers);
@@ -270,7 +273,33 @@ where
     for (name, value) in symbols {
         options = options.with_symbol(name.clone(), value.clone());
     }
-    Ok(f(source, &options))
+    if safe {
+        options = options.with_raw_html(false);
+    }
+    if let Some(name) = profile {
+        options = options.with_profile(parse_profile(name)?);
+    }
+    // The fallible engine entry points, so a profile rejection raises instead of
+    // returning an empty string. The infallible `to_*_with_options` wrappers are
+    // `try_...().unwrap_or_default()`, which would make a rejected 20 KB comment
+    // indistinguishable from a document that legitimately rendered to nothing.
+    f(source, &options).map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
+/// Map a profile name to a [`Profile`], or raise Python ValueError.
+///
+/// The four presets are the engine's. An unknown name is reported rather than
+/// silently ignored, matching [`parse_mode`].
+fn parse_profile(name: &str) -> PyResult<Profile> {
+    match name {
+        "full" => Ok(Profile::full()),
+        "article" => Ok(Profile::article()),
+        "comment" => Ok(Profile::comment()),
+        "minimal" => Ok(Profile::minimal()),
+        other => Err(PyValueError::new_err(format!(
+            "unknown carve profile: {other:?} (supported: \"full\", \"article\", \"comment\", \"minimal\")"
+        ))),
+    }
 }
 
 /// Resolve the mode string and renderers dict into the carve-rs types.
@@ -307,13 +336,15 @@ fn resolve_mode_and_renderers(
 /// deliberate: processor configuration is trusted. NEVER build a symbols map
 /// out of untrusted / user-supplied input.
 #[pyfunction]
-#[pyo3(signature = (source, extensions = None, mode = "interactive", renderers = None, symbols = None))]
+#[pyo3(signature = (source, extensions = None, mode = "interactive", renderers = None, symbols = None, safe = false, profile = None))]
 fn to_html(
     source: &str,
     extensions: Option<Vec<String>>,
     mode: &str,
     renderers: Option<Bound<'_, PyDict>>,
     symbols: Option<Bound<'_, PyDict>>,
+    safe: bool,
+    profile: Option<&str>,
 ) -> PyResult<String> {
     let (parsed_mode, static_renderers) = resolve_mode_and_renderers(mode, renderers.as_ref())?;
     let symbol_pairs = match symbols.as_ref() {
@@ -329,6 +360,8 @@ fn to_html(
         && symbol_pairs.is_empty()
         && static_renderers.diagrams.is_empty()
         && static_renderers.math.is_none()
+        && !safe
+        && profile.is_none()
     {
         return Ok(carve_rs::to_html(source));
     }
@@ -338,7 +371,9 @@ fn to_html(
         parsed_mode,
         static_renderers,
         &symbol_pairs,
-        carve_rs::to_html_with_options,
+        safe,
+        profile,
+        carve_rs::try_to_html_with_options,
     )
 }
 
@@ -347,13 +382,15 @@ fn to_html(
 /// Supports the same `mode` / `renderers` / `symbols` keywords as [`to_html`]
 /// (including the trusted-raw contract on symbol values).
 #[pyfunction]
-#[pyo3(signature = (source, extensions, mode = "interactive", renderers = None, symbols = None))]
+#[pyo3(signature = (source, extensions, mode = "interactive", renderers = None, symbols = None, safe = false, profile = None))]
 fn to_html_with_extensions(
     source: &str,
     extensions: Vec<String>,
     mode: &str,
     renderers: Option<Bound<'_, PyDict>>,
     symbols: Option<Bound<'_, PyDict>>,
+    safe: bool,
+    profile: Option<&str>,
 ) -> PyResult<String> {
     let (parsed_mode, static_renderers) = resolve_mode_and_renderers(mode, renderers.as_ref())?;
     let symbol_pairs = match symbols.as_ref() {
@@ -366,7 +403,9 @@ fn to_html_with_extensions(
         parsed_mode,
         static_renderers,
         &symbol_pairs,
-        carve_rs::to_html_with_options,
+        safe,
+        profile,
+        carve_rs::try_to_html_with_options,
     )
 }
 
@@ -377,52 +416,76 @@ fn is_core(extensions: &Option<Vec<String>>) -> bool {
 
 /// Convert Carve source to Markdown.
 #[pyfunction]
-#[pyo3(signature = (source, extensions = None))]
-fn to_markdown(source: &str, extensions: Option<Vec<String>>) -> PyResult<String> {
-    if is_core(&extensions) {
+#[pyo3(signature = (source, extensions = None, profile = None))]
+fn to_markdown(
+    source: &str,
+    extensions: Option<Vec<String>>,
+    profile: Option<&str>,
+) -> PyResult<String> {
+    // The fast path must not swallow `profile`: returning here with a profile
+    // set would accept the keyword and silently ignore it.
+    if is_core(&extensions) && profile.is_none() {
         return Ok(carve_rs::to_markdown(source));
     }
     render(
         source,
-        &extensions.unwrap(),
+        &extensions.unwrap_or_default(),
         Mode::Interactive,
         StaticRenderers::default(),
         &[],
-        carve_rs::to_markdown_with_options,
+        false,
+        profile,
+        carve_rs::try_to_markdown_with_options,
     )
 }
 
 /// Convert Carve source to plain text.
 #[pyfunction]
-#[pyo3(signature = (source, extensions = None))]
-fn to_plain_text(source: &str, extensions: Option<Vec<String>>) -> PyResult<String> {
-    if is_core(&extensions) {
+#[pyo3(signature = (source, extensions = None, profile = None))]
+fn to_plain_text(
+    source: &str,
+    extensions: Option<Vec<String>>,
+    profile: Option<&str>,
+) -> PyResult<String> {
+    // The fast path must not swallow `profile`: returning here with a profile
+    // set would accept the keyword and silently ignore it.
+    if is_core(&extensions) && profile.is_none() {
         return Ok(carve_rs::to_plain_text(source));
     }
     render(
         source,
-        &extensions.unwrap(),
+        &extensions.unwrap_or_default(),
         Mode::Interactive,
         StaticRenderers::default(),
         &[],
-        carve_rs::to_plain_text_with_options,
+        false,
+        profile,
+        carve_rs::try_to_plain_text_with_options,
     )
 }
 
 /// Convert Carve source to ANSI-colored terminal text.
 #[pyfunction]
-#[pyo3(signature = (source, extensions = None))]
-fn to_ansi(source: &str, extensions: Option<Vec<String>>) -> PyResult<String> {
-    if is_core(&extensions) {
+#[pyo3(signature = (source, extensions = None, profile = None))]
+fn to_ansi(
+    source: &str,
+    extensions: Option<Vec<String>>,
+    profile: Option<&str>,
+) -> PyResult<String> {
+    // The fast path must not swallow `profile`: returning here with a profile
+    // set would accept the keyword and silently ignore it.
+    if is_core(&extensions) && profile.is_none() {
         return Ok(carve_rs::to_ansi(source));
     }
     render(
         source,
-        &extensions.unwrap(),
+        &extensions.unwrap_or_default(),
         Mode::Interactive,
         StaticRenderers::default(),
         &[],
-        carve_rs::to_ansi_with_options,
+        false,
+        profile,
+        carve_rs::try_to_ansi_with_options,
     )
 }
 
