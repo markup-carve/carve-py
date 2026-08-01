@@ -64,6 +64,34 @@ carve.extensions()
 
 Passing an unknown extension name raises `ValueError`.
 
+## The parsed AST
+
+`carve.parse()` returns the document as Python data - the [PART 12 exchange
+shape](https://markup-carve.github.io/carve/ast-json), the same tree every Carve
+engine publishes, so a consumer written against one implementation reads
+another's output.
+
+```python
+ast = carve.parse("# Title\n\nBody[^a].\n\n[^a]: note\n")
+
+ast["type"]                        # "document"
+[c["type"] for c in ast["children"]]   # ["heading", "paragraph", "footnote"]
+ast["children"][0]["pos"]          # {"startLine": 1, "startColumn": 1, ...}
+
+carve.parse_json(source)           # the same tree, as a JSON string
+```
+
+The root carries exactly `type`, `children` and `srcByteLength`; frontmatter and
+footnote definitions are block nodes inside `children`, not root fields. Every
+node except the root carries `pos` when the engine could place it - 1-based
+lines and columns, 0-based offsets, ends exclusive, counted in Unicode
+**codepoints**, not bytes. A node the engine could not place, such as
+reassembled table-cell text, carries no `pos` at all rather than an invented
+one.
+
+The serialization is the engine's own, so this binding publishes byte-identical
+output to the `carve --json` CLI and to every other binding over carve-rs.
+
 ## Symbols
 
 A `:name:` symbol renders its literal `:name:` source unless the name is in the

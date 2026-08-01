@@ -1,6 +1,6 @@
 """Type stubs for the `carve` native binding (PyO3 over carve-rs)."""
 
-from typing import Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 __version__: str
 
@@ -146,6 +146,32 @@ def needs_review(source: str, current_version: Optional[str] = None) -> bool:
 
     See https://markup-carve.github.io/carve/versioning for what a version
     difference means for a stored document.
+    """
+    ...
+
+def parse(source: str) -> Dict[str, Any]:
+    """Parse Carve source and return its AST as Python data.
+
+    The PART 12 exchange shape - the same tree every Carve engine publishes, so
+    a consumer written against one implementation reads another's output. The
+    root carries exactly ``type``, ``children`` and ``srcByteLength``;
+    frontmatter and footnote definitions are block nodes inside ``children``.
+
+    Every node except the root carries ``pos`` when the engine could place it:
+    1-based lines and columns, 0-based offsets, ends exclusive, counted in
+    Unicode **codepoints**. A node the engine could not place - reassembled
+    text, a synthesized node - has no ``pos`` at all rather than an invented
+    one.
+
+    See https://markup-carve.github.io/carve/ast-json and its JSON Schema.
+    """
+    ...
+
+def parse_json(source: str) -> str:
+    """The same tree as :func:`parse`, as a JSON string.
+
+    For a caller that stores or forwards the bytes rather than walking the tree,
+    and so does not need the round trip through Python objects.
     """
     ...
 
