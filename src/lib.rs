@@ -521,6 +521,38 @@ fn needs_review(source: &str, current_version: Option<&str>) -> bool {
     carve_rs::needs_review(source, current_version.unwrap_or(carve_rs::SPEC_VERSION))
 }
 
+/// Parse Carve source and return its AST as a JSON string.
+///
+/// The PART 12 exchange shape, produced by the engine itself
+/// (`carve_rs::to_json`) rather than by a walker written here - so this binding
+/// publishes the same bytes as the CLI, carve-rb and every other consumer of
+/// the same engine.
+///
+/// Position tracking is ON here and nowhere else. PART 12 section 4 lets an
+/// engine gate tracking behind a parse option but requires the serialized form
+/// to carry it, and this is the only entry point that serializes; `to_html` and
+/// friends would pay for spans nobody reads.
+#[pyfunction]
+fn parse_json(source: &str) -> String {
+    let mut options = Options::new();
+    options.positions = true;
+    carve_rs::to_json(&carve_rs::parse_with_options(source, &options))
+}
+
+/// Parse Carve source and return its AST as Python data (dicts and lists).
+///
+/// The same tree as `parse_json`, decoded with the standard library's `json`
+/// module so a caller does not have to. `parse_json` stays available for a
+/// caller that wants to store or forward the bytes without a round trip
+/// through Python objects.
+#[pyfunction]
+fn parse(py: Python<'_>, source: &str) -> PyResult<Py<PyAny>> {
+    let json = py.import("json")?;
+    let loaded = json.call_method1("loads", (parse_json(source),))?;
+
+    Ok(loaded.unbind())
+}
+
 /// Return the list of supported extension names.
 #[pyfunction]
 fn extensions() -> Vec<String> {
@@ -538,5 +570,7 @@ fn carve(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(extensions, m)?)?;
     m.add_function(wrap_pyfunction!(read_stamp, m)?)?;
     m.add_function(wrap_pyfunction!(needs_review, m)?)?;
+    m.add_function(wrap_pyfunction!(parse, m)?)?;
+    m.add_function(wrap_pyfunction!(parse_json, m)?)?;
     Ok(())
 }
