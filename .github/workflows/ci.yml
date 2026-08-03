@@ -45,6 +45,13 @@ jobs:
       # current one. Everything above asserts hand-written expectations, which a
       # drifted engine satisfies happily -- that is how the pin managed to sit
       # months behind with CI green.
+      #
+      # It has to read MORE THAN to_html. The corpus checks were html-only, and
+      # html is the target where the engines have been in agreement all along --
+      # which is exactly why the divergences kept landing elsewhere. The pin then
+      # sat 65 commits behind a second time, publishing adjacent text runs in 8
+      # documents (PART 12 section 1a) with every gate green (#16).
+      # tests/test_corpus_targets.py covers markdown, ansi, plain and parse.
       - name: Check out the spec corpus
         uses: actions/checkout@v4
         with:

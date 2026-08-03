@@ -26,9 +26,17 @@ def test_root_carries_exactly_the_three_fields():
 def test_frontmatter_is_raw_not_parsed():
     # A parsed mapping cannot be serialized back to the bytes the author wrote,
     # so the wire carries the block verbatim plus its format.
+    #
+    # Asserted field by field rather than by whole-dict equality: the engine may
+    # add a field the spec allows - it added `pos` - and an equality check turns
+    # that into a failure here that says nothing about frontmatter. What this
+    # test is for is that the CONTENT is raw.
     frontmatter = carve.parse("---toml\nx = 1\n---\n\nBody.\n")["children"][0]
 
-    assert frontmatter == {"type": "frontmatter", "format": "toml", "content": "x = 1"}
+    assert frontmatter["type"] == "frontmatter"
+    assert frontmatter["format"] == "toml"
+    assert frontmatter["content"] == "x = 1"
+    assert "children" not in frontmatter
 
 
 def test_nodes_carry_codepoint_positions():
@@ -44,15 +52,40 @@ def test_nodes_carry_codepoint_positions():
     assert strong["pos"]["startOffset"] == 2
 
 
-def test_a_span_the_engine_cannot_place_is_absent_not_invented():
-    # Section 4 again: "MUST NOT emit `pos` with invented values". A cell's TEXT
-    # is reassembled - the parser unescapes `\\|` on the way in - so it is not a
-    # verbatim slice of the source and carries no span, while the cell around it,
-    # which is a slice, does.
-    cell = carve.parse("| a | b |\n|---|---|\n| c | d |\n")["children"][0]["rows"][0]["cells"][0]
+def test_a_published_span_slices_back_to_its_own_text():
+    # Section 4 again: "MUST NOT emit `pos` with invented values".
+    #
+    # Stated as the property rather than as "this node has no span". The engine
+    # places more of the tree over time - a table cell's text used to carry no
+    # position and now does - and an absence assertion turns each of those
+    # improvements into a failure that says nothing about correctness. What
+    # section 4 forbids is a span pointing somewhere else, so check exactly that:
+    # every published span must slice back to the text it belongs to.
+    #
+    # The escaped pipe is the case worth carrying. The parser splits the run at
+    # the escape, so a span that spanned the whole reassembled cell text would
+    # not be a slice of the source at any offset.
+    source = "| a \\| b | c |\n|---|---|\n| d | e |\n"
+    codepoints = list(source)
+    wrong = []
 
-    assert "pos" in cell
-    assert "pos" not in cell["children"][0]
+    def check(node):
+        if not isinstance(node, dict):
+            return
+        if node.get("type") == "text" and "pos" in node:
+            span = node["pos"]
+            sliced = "".join(codepoints[span["startOffset"]:span["endOffset"]])
+            if sliced != node["value"]:
+                wrong.append(f"{span} is {sliced!r}, want {node['value']!r}")
+        for value in node.values():
+            if isinstance(value, list):
+                for child in value:
+                    check(child)
+            elif isinstance(value, dict):
+                check(value)
+
+    check(carve.parse(source))
+    assert wrong == [], f"{len(wrong)} span(s) do not contain their own text: {wrong}"
 
 
 def test_parse_json_returns_the_same_tree_as_parse():
