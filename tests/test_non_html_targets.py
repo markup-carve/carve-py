@@ -14,8 +14,10 @@ checks that every target survives the whole corpus, which is the part a stale
 pin can break outright.
 """
 
+import json
 import os
 import pathlib
+import re
 
 import carve
 import pytest
@@ -83,3 +85,101 @@ def test_adjacent_text_runs_are_coalesced():
     values = [c["value"] for c in children if c["type"] == "text"]
 
     assert values == ["A [missing][nope] ref stays literal."]
+
+
+# --- corpus-wide sweeps -----------------------------------------------------
+#
+# The three checks above pin ONE input each, which is the right shape for
+# naming a specific regression. It is the wrong shape for noticing the next
+# one: a construct nobody thought to write down drifts silently. These run the
+# same properties over every corpus document, so a new occurrence has somewhere
+# to fail.
+
+
+def _has_nested_link(markdown):
+    r"""Whether any link label in `markdown` contains a complete link.
+
+    A bracket walk rather than a regex. The obvious pattern -
+    `\[([^\[\]]*)\]\(` - forbids `[` inside the label, so on
+    `[see [H](#H)](/outer)` it skips the outer label entirely and matches the
+    INNER link, whose label holds nothing: the check would pass on exactly the
+    input it exists to catch.
+    """
+    open_labels = []
+    escaped = False
+    for i, ch in enumerate(markdown):
+        if escaped:
+            escaped = False
+            continue
+        if ch == "\\":
+            escaped = True
+        elif ch == "[":
+            open_labels.append(False)
+        elif ch == "]" and open_labels:
+            closed_a_link = markdown[i + 1 : i + 2] == "("
+            inner_saw_link = open_labels.pop()
+            if closed_a_link and inner_saw_link:
+                return True
+            if closed_a_link and open_labels:
+                open_labels[-1] = True
+    return False
+
+
+def test_no_document_in_the_corpus_emits_a_nested_link():
+    nested = [
+        crv.stem
+        for crv in _sources()
+        if _has_nested_link(carve.to_markdown(crv.read_text(encoding="utf-8")))
+    ]
+
+    assert nested == [], f"{len(nested)} document(s) emit a nested link: {nested[:5]}"
+
+
+def _adjacent_text_runs(node, hits):
+    if not isinstance(node, dict):
+        return
+    for value in node.values():
+        if isinstance(value, list):
+            previous = None
+            for child in value:
+                if isinstance(child, dict):
+                    if previous == "text" and child.get("type") == "text":
+                        hits.append(1)
+                    previous = child.get("type")
+                    _adjacent_text_runs(child, hits)
+        elif isinstance(value, dict):
+            _adjacent_text_runs(value, hits)
+
+
+def test_no_document_in_the_corpus_publishes_an_adjacent_text_run():
+    # Against the pin this repo shipped before #17, EIGHT documents did - the
+    # single-input check above catches one of the eight.
+    offenders = []
+    for crv in _sources():
+        hits = []
+        _adjacent_text_runs(json.loads(carve.parse_json(crv.read_text(encoding="utf-8"))), hits)
+        if hits:
+            offenders.append(f"{crv.stem} ({len(hits)})")
+
+    assert offenders == [], (
+        f"{len(offenders)} document(s) publish adjacent text runs: {offenders[:8]}"
+    )
+
+
+# U+E000..U+E003 are the engine's internal sentinels (the no-break-space
+# placeholder and the writer's verbatim marks). Every renderer resolves its own;
+# one reaching a caller is a rendering bug wearing a private-use codepoint, and
+# it is invisible in a terminal - which is exactly why it wants a check rather
+# than an eye.
+SENTINELS = re.compile("[\ue000-\ue003]")
+
+
+def test_no_target_leaks_an_internal_sentinel():
+    leaks = []
+    for crv in _sources():
+        source = crv.read_text(encoding="utf-8")
+        for name, render in TARGETS.items():
+            if SENTINELS.search(render(source)):
+                leaks.append(f"{crv.stem} [{name}]")
+
+    assert leaks == [], f"{len(leaks)} document(s) leak a private-use sentinel: {leaks[:5]}"
