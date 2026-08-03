@@ -81,10 +81,20 @@ def test_adjacent_text_runs_are_coalesced():
     # PART 12 section 1a, carve-rs#441. The pinned engine published several text
     # nodes wherever a construct reverted to literal source, so a consumer could
     # not compare this binding's tree with another engine's node for node.
+    #
+    # The assertion is the PROPERTY - no two text nodes are adjacent - not a
+    # fixed node list. An unresolved reference is a `link` node now rather than
+    # reverted text (carve-rs#474), so the old expectation of one text run for
+    # the whole paragraph described an engine that no longer exists. carve-js
+    # publishes the same three nodes for this input.
     children = carve.parse("A [missing][nope] ref stays literal.\n")["children"][0]["children"]
-    values = [c["value"] for c in children if c["type"] == "text"]
+    types = [c["type"] for c in children]
 
-    assert values == ["A [missing][nope] ref stays literal."]
+    assert types == ["text", "link", "text"], types
+    adjacent = [
+        (a, b) for a, b in zip(types, types[1:]) if a == "text" and b == "text"
+    ]
+    assert adjacent == [], f"adjacent text runs were not coalesced: {children}"
 
 
 # --- corpus-wide sweeps -----------------------------------------------------
