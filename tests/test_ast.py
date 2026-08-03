@@ -28,7 +28,13 @@ def test_frontmatter_is_raw_not_parsed():
     # so the wire carries the block verbatim plus its format.
     frontmatter = carve.parse("---toml\nx = 1\n---\n\nBody.\n")["children"][0]
 
-    assert frontmatter == {"type": "frontmatter", "format": "toml", "content": "x = 1"}
+    assert frontmatter["type"] == "frontmatter"
+    assert frontmatter["format"] == "toml"
+    assert frontmatter["content"] == "x = 1"
+    # Section 4 requires a position on every node but the root, and the engine
+    # places this one now. Asserting the whole dict pinned its ABSENCE, so the
+    # test failed on the engine getting better rather than worse.
+    assert "pos" in frontmatter
 
 
 def test_nodes_carry_codepoint_positions():
@@ -45,14 +51,22 @@ def test_nodes_carry_codepoint_positions():
 
 
 def test_a_span_the_engine_cannot_place_is_absent_not_invented():
-    # Section 4 again: "MUST NOT emit `pos` with invented values". A cell's TEXT
-    # is reassembled - the parser unescapes `\\|` on the way in - so it is not a
-    # verbatim slice of the source and carries no span, while the cell around it,
-    # which is a slice, does.
-    cell = carve.parse("| a | b |\n|---|---|\n| c | d |\n")["children"][0]["rows"][0]["cells"][0]
+    # Section 4 again: "MUST NOT emit `pos` with invented values".
+    #
+    # The input matters. A single-line cell's text IS a verbatim slice of the
+    # source, and the engine places it - this test used one and asserted the
+    # position was absent, which held only while the engine could not do better.
+    # A cell continued across lines with `+` is genuinely unplaceable: the two
+    # halves are joined by a space the source does not contain, so the value is
+    # not a slice of it at any offset (PART 12 section 1a merges the run; the
+    # merged span would cover the delimiter and the newline).
+    source = "|= a |= b |\n| x | A long description |\n+     | that continues     |\n"
+    cell = carve.parse(source)["children"][0]["rows"][1]["cells"][1]
 
-    assert "pos" in cell
-    assert "pos" not in cell["children"][0]
+    assert "pos" in cell, "the cell itself is a slice of the source"
+    text = cell["children"][0]
+    assert text["value"] == "A long description that continues"
+    assert "pos" not in text, "a value joined across lines must not claim a span"
 
 
 def test_parse_json_returns_the_same_tree_as_parse():
