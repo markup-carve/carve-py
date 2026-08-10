@@ -97,6 +97,22 @@ jobs:
           maturin build --release --out dist
           pip install --find-links dist --force-reinstall carve-lang
 
+      - name: Check source-distribution payload
+        run: |
+          maturin sdist --out sdist
+          python - <<'PY'
+          import pathlib
+          import tarfile
+
+          archive = next(pathlib.Path("sdist").glob("*.tar.gz"))
+          forbidden = (".github/", ".gitattributes", ".gitignore", "scripts/", "tests/")
+          with tarfile.open(archive) as package:
+              files = [member.name.split("/", 1)[1] for member in package if "/" in member.name]
+          leaked = [name for name in files if name in forbidden or name.startswith(forbidden)]
+          if leaked:
+              raise SystemExit("development-only files entered the sdist: " + ", ".join(leaked))
+          PY
+
       # The corpus is the only check that can tell a drifted engine pin from a
       # current one. Everything above asserts hand-written expectations, which a
       # drifted engine satisfies happily -- that is how the pin managed to sit

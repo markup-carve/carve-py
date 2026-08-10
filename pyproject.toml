@@ -29,3 +29,10 @@ Repository = "https://github.com/markup-carve/carve-py"
 # the distribution name is `carve-lang`.
 module-name = "carve"
 features = ["pyo3/extension-module"]
+exclude = [
+    ".github/**",
+    ".gitattributes",
+    ".gitignore",
+    "scripts/**",
+    "tests/**",
+]
