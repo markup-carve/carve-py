@@ -69,19 +69,19 @@ def test_input_under_the_cap_still_renders():
 def test_profile_applies_to_the_other_targets_too():
     """A profile reaches markdown / plain / ansi, not only HTML.
 
-    The comment profile disallows headings, so the heading becomes text. In the
-    Markdown target that text is escaped (`\\# Heading`), because a bare `#`
-    would re-parse as a heading downstream - the filtering would otherwise undo
-    itself.
+    The minimal profile degrades an image to its visible fallback. This makes
+    the transform observable in Markdown bytes without asserting a wider escape
+    than PART 11 section 8a permits for a literal `#` at line start.
     """
-    md = carve.to_markdown(RAW_HTML, profile="comment")
-    assert "\\# Heading" in md
-    assert not md.startswith("# ")
+    source = "![alt](image.png)\n"
+    md = carve.to_markdown(source, profile="minimal")
+    assert "img: alt" in md
+    assert "![" not in md
 
-    # Unfiltered, the heading stays a real heading, so the check above can fail.
-    assert carve.to_markdown(RAW_HTML).startswith("# Heading")
+    # Unfiltered, the image stays an image, so the check above can fail.
+    assert carve.to_markdown(source).startswith("![alt]")
 
-    assert "Heading" in carve.to_plain_text(RAW_HTML, profile="comment")
+    assert "[img: alt]" in carve.to_plain_text(source, profile="minimal")
 
 
 @pytest.mark.parametrize("func", ["to_markdown", "to_plain_text", "to_ansi"])

@@ -115,6 +115,10 @@ def _has_nested_link(markdown):
     INNER link, whose label holds nothing: the check would pass on exactly the
     input it exists to catch.
     """
+    # Each entry records whether the bracket belongs to an image and whether a
+    # real link has closed inside it. Markdown images use the same `](` suffix
+    # as links and are valid inside a link, so counting them as nested links
+    # produces a false positive for `[![alt](/i)](/outer)`.
     open_labels = []
     escaped = False
     for i, ch in enumerate(markdown):
@@ -124,14 +128,16 @@ def _has_nested_link(markdown):
         if ch == "\\":
             escaped = True
         elif ch == "[":
-            open_labels.append(False)
+            open_labels.append(
+                {"image": i > 0 and markdown[i - 1] == "!", "link": False}
+            )
         elif ch == "]" and open_labels:
-            closed_a_link = markdown[i + 1 : i + 2] == "("
-            inner_saw_link = open_labels.pop()
-            if closed_a_link and inner_saw_link:
+            closed = open_labels.pop()
+            closed_a_link = markdown[i + 1 : i + 2] == "(" and not closed["image"]
+            if closed_a_link and closed["link"]:
                 return True
             if closed_a_link and open_labels:
-                open_labels[-1] = True
+                open_labels[-1]["link"] = True
     return False
 
 
