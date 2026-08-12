@@ -6,7 +6,7 @@ The engine is carve-rs, embedded at the revision recorded in `Cargo.lock`, so an
 engine bump can change rendering without a line of Python changing. Engine bumps
 therefore get an entry of their own.
 
-## Unreleased
+## 0.1.1 - 2026-08-12
 
 - Take the extension list from the engine's registry instead of a hand-written
   copy. Twelve extensions that carve-rs already had become reachable from
