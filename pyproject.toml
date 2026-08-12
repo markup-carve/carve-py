@@ -8,19 +8,32 @@ version = "0.1.0"
 description = "Python bindings for the Carve markup language (native PyO3 binding over carve-rs)."
 readme = "README.md"
 requires-python = ">=3.8"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "markup-carve" }]
 keywords = ["carve", "markup", "parser", "html", "djot", "mkdocs", "sphinx"]
 classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
     "Programming Language :: Rust",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Text Processing :: Markup :: HTML",
-    "License :: OSI Approved :: MIT License",
+    "Topic :: Text Processing :: Markup",
+    "Typing :: Typed",
 ]
 
 [project.urls]
 Homepage = "https://markup-carve.github.io/carve/"
 Repository = "https://github.com/markup-carve/carve-py"
+Documentation = "https://github.com/markup-carve/carve-py#readme"
+Changelog = "https://github.com/markup-carve/carve-py/blob/main/CHANGELOG.md"
+Issues = "https://github.com/markup-carve/carve-py/issues"
 
 [tool.maturin]
 # The Rust cdylib is named `carve` (see Cargo.toml [lib]); maturin builds an

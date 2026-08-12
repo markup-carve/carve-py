@@ -6,9 +6,38 @@ on:
       - "v*"
 
 jobs:
+  # Runs before the three-OS wheel matrix, so a tag that disagrees with the
+  # packaged version or has no notes costs seconds rather than a full build.
+  guard:
+    name: Check the tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The tag matches the packaged version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)"
+          if [ "$tag" != "$version" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match project version ${version}" >&2
+            exit 1
+          fi
+
+      # The notes live in the repo, so a deleted or rebuilt release loses
+      # nothing - and a tag cannot outrun them. PyPI never reuses a version, so
+      # discovering missing notes after the upload is unfixable.
+      - name: The release notes exist
+        run: |
+          notes=".github/release-notes/${GITHUB_REF_NAME#v}.md"
+          if [ ! -s "$notes" ]; then
+            echo "no release notes at $notes" >&2
+            exit 1
+          fi
+
   build-wheels:
     name: Build wheels (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: [guard]
     strategy:
       fail-fast: false
       matrix:
@@ -37,6 +66,7 @@ jobs:
   build-sdist:
     name: Build source distribution
     runs-on: ubuntu-latest
+    needs: [guard]
     steps:
       - uses: actions/checkout@v4
 
@@ -96,3 +126,31 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+
+  github-release:
+    name: Publish the GitHub release
+    runs-on: ubuntu-latest
+    needs: [publish]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      # The tag carries a leading v, the notes file does not.
+      - name: Locate the notes
+        id: notes
+        run: echo "path=.github/release-notes/${GITHUB_REF_NAME#v}.md" >> "$GITHUB_OUTPUT"
+
+      # Runs after the PyPI upload, so a release page never advertises a
+      # version the registry does not have.
+      - name: Create the release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: ${{ steps.notes.outputs.path }}
+          files: dist/*
+          make_latest: true
