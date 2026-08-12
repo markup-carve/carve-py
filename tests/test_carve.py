@@ -110,11 +110,31 @@ def test_code_callouts_extension_changes_output():
 
 
 def test_extensions_list():
+    # The list comes from the engine's registry, whose keys are kebab-case.
     exts = carve.extensions()
     assert isinstance(exts, list)
-    assert "math_block" in exts
-    assert "list_table" in exts
+    assert "math-block" in exts
+    assert "list-table" in exts
     assert "code-callouts" in exts
+
+
+def test_extensions_list_covers_what_the_engine_registers():
+    # These were unreachable from Python while the binding kept its own
+    # hand-written list: the engine had them, nothing here knew.
+    exts = carve.extensions()
+    for name in ("glossary", "index", "table-of-contents", "heading-numbers",
+                 "code-group", "heading-reference", "img-fence", "smart-quotes"):
+        assert name in exts, name
+
+
+def test_snake_case_names_still_work():
+    # Registry keys are kebab-case, but this binding has always taken the
+    # snake_case spellings and mkdocs configs are written with them. Both reach
+    # the same extension.
+    src = "# Heading\n"
+    assert carve.to_html(src, extensions=["heading_permalinks"]) == carve.to_html(
+        src, extensions=["heading-permalinks"]
+    )
 
 
 # --- Other renderers -----------------------------------------------------
@@ -224,12 +244,12 @@ def test_fenced_render_presets_are_exposed_by_name():
     # Every FencedRender preset is selectable by name (the diagram gap that
     # blocked PlantUML/Graphviz/D2 in the bindings).
     for name in (
-        "fenced_render_plantuml",
-        "fenced_render_graphviz",
-        "fenced_render_d2",
-        "fenced_render_wavedrom",
-        "fenced_render_vega_lite",
-        "fenced_render_abc",
+        "fenced-render-plantuml",
+        "fenced-render-graphviz",
+        "fenced-render-d2",
+        "fenced-render-wavedrom",
+        "fenced-render-vega-lite",
+        "fenced-render-abc",
     ):
         assert name in carve.extensions()
 

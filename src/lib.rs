@@ -13,10 +13,9 @@
 //!
 //! We never reimplement the parser; every call delegates to carve-rs.
 
+use carve_rs::extensions::registry;
 use carve_rs::{
-    Autolink, CarveExtension, Citations, CodeCallouts, Details, ExternalLinks, FencedRender,
-    HeadingPermalinks, ListTable, MathBlock, Mode, Options, Profile, ProfileViolationError,
-    Spoiler, StaticRenderers, TabNormalize, Wikilinks,
+    CarveExtension, Mode, Options, Profile, ProfileViolationError, StaticRenderers,
 };
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -46,76 +45,40 @@ fn escape_html(s: &str) -> String {
     out
 }
 
+/// The engine's registry key for a Python-facing name.
+///
+/// Registry keys are kebab-case; this binding has always accepted (and mkdocs
+/// configs have always written) the snake_case spellings `external_links`,
+/// `math_block`, `heading_permalinks` and friends. Both reach the same
+/// extension, so neither spelling has to be memorized and no existing config
+/// breaks.
+fn registry_key(name: &str) -> String {
+    name.replace('_', "-")
+}
+
 /// Map a Python-facing extension name to an owned boxed carve-rs extension.
 ///
 /// Returns an error for unknown names so typos surface immediately in Python
 /// rather than silently producing core output.
 fn build_extension(name: &str) -> PyResult<Box<dyn CarveExtension>> {
-    let ext: Box<dyn CarveExtension> = match name {
-        "autolink" => Box::new(Autolink::new()),
-        "details" => Box::new(Details::new()),
-        "external_links" => Box::new(ExternalLinks::new()),
-        // The mermaid preset carries the static-renderer key, so a static
-        // render can consult `renderers={'mermaid': ...}`. (Plain
-        // `FencedRender::new("mermaid")` would degrade to source even with a
-        // renderer supplied, since it has no static-renderer key.)
-        "fenced_render" => Box::new(FencedRender::mermaid()),
-        // Chart.js preset (JSON mode); its static path consults
-        // `renderers={'chart': ...}`, else degrades to the JSON source.
-        "fenced_render_chart" => Box::new(FencedRender::chart()),
-        // PlantUML preset (text mode, claims `plantuml`/`puml`). No browser
-        // library, so it is client-rendered via a Kroki server.
-        "fenced_render_plantuml" => Box::new(FencedRender::plantuml()),
-        // Graphviz preset (text mode, claims `dot`/`graphviz`).
-        "fenced_render_graphviz" => Box::new(FencedRender::graphviz()),
-        // D2 preset (text mode).
-        "fenced_render_d2" => Box::new(FencedRender::d2()),
-        // WaveDrom preset (text mode).
-        "fenced_render_wavedrom" => Box::new(FencedRender::wavedrom()),
-        // Vega-Lite preset (JSON mode).
-        "fenced_render_vega_lite" => Box::new(FencedRender::vega_lite()),
-        // ABC music-notation preset (text mode).
-        "fenced_render_abc" => Box::new(FencedRender::abc()),
-        "heading_permalinks" => Box::new(HeadingPermalinks::new()),
-        "list_table" => Box::new(ListTable::new()),
-        "math_block" => Box::new(MathBlock::new()),
-        "spoiler" => Box::new(Spoiler::new()),
-        "tab_normalize" => Box::new(TabNormalize::new()),
-        "wikilinks" => Box::new(Wikilinks::new()),
-        "citations" => Box::new(Citations::new()),
-        "code-callouts" => Box::new(CodeCallouts::new()),
-        other => {
-            return Err(PyValueError::new_err(format!(
-                "unknown carve extension: {other:?} (supported: {})",
-                SUPPORTED.join(", ")
-            )));
-        }
-    };
-    Ok(ext)
+    registry::by_key(&registry_key(name)).ok_or_else(|| {
+        PyValueError::new_err(format!(
+            "unknown carve extension: {name:?} (supported: {})",
+            supported().join(", ")
+        ))
+    })
 }
 
-/// The canonical list of extension names accepted by the binding.
-const SUPPORTED: &[&str] = &[
-    "autolink",
-    "details",
-    "external_links",
-    "fenced_render",
-    "fenced_render_chart",
-    "fenced_render_plantuml",
-    "fenced_render_graphviz",
-    "fenced_render_d2",
-    "fenced_render_wavedrom",
-    "fenced_render_vega_lite",
-    "fenced_render_abc",
-    "heading_permalinks",
-    "list_table",
-    "math_block",
-    "spoiler",
-    "tab_normalize",
-    "wikilinks",
-    "citations",
-    "code-callouts",
-];
+/// Every extension name this build accepts, taken from the engine.
+///
+/// This used to be a hand-written array beside a hand-written match, and
+/// nothing compared either against carve-rs. An extension could land in the
+/// engine and stay invisible from Python indefinitely, which is exactly what
+/// happened: ten of them had accumulated - glossary, index, table of contents,
+/// heading numbers and more - with no test able to notice.
+fn supported() -> Vec<String> {
+    registry::keys().map(str::to_string).collect()
+}
 
 /// Build an owned vec of boxed extensions from the requested names.
 fn boxed_extensions(names: &[String]) -> PyResult<Vec<Box<dyn CarveExtension>>> {
@@ -554,9 +517,13 @@ fn parse(py: Python<'_>, source: &str) -> PyResult<Py<PyAny>> {
 }
 
 /// Return the list of supported extension names.
+///
+/// Taken from the engine's registry, so a new extension in carve-rs is
+/// reachable from Python as soon as the pin moves - no list here to update, and
+/// none to forget.
 #[pyfunction]
 fn extensions() -> Vec<String> {
-    SUPPORTED.iter().map(|s| s.to_string()).collect()
+    supported()
 }
 
 #[pymodule]
