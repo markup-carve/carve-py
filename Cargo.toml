@@ -35,7 +35,7 @@ pyo3 = { version = "0.27", features = ["abi3-py38", "extension-module"] }
 # manifest said current (#16). #17 bumped the lock; this makes the manifest say
 # what it does, so the next drift is a line in a diff rather than a lockfile
 # nobody reads.
-carve_rs = { package = "carve-lang", git = "https://github.com/markup-carve/carve-rs", rev = "4ddc24a01f1116a8315421d7dce131b27ec45f61" }
+carve_rs = { package = "carve-lang", git = "https://github.com/markup-carve/carve-rs", rev = "17300594d2ed9c46484a99d146e6cd84a9c6d625" }
 #
 # For local development against a sibling checkout, swap the line above for a
 # path dependency:

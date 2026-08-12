@@ -64,6 +64,12 @@ carve.extensions()
 
 Passing an unknown extension name raises `ValueError`.
 
+The names come from the engine itself, so `carve.extensions()` is the list this
+build actually accepts rather than a list documented here that could fall behind
+it. They are kebab-case (`math-block`, `table-of-contents`); the snake_case
+spellings this binding has always taken (`math_block`) reach the same
+extensions, so nothing written against the older names has to change.
+
 ## The parsed AST
 
 `carve.parse()` returns the document as Python data - the [PART 12 exchange

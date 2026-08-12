@@ -6,6 +6,19 @@ The engine is carve-rs, embedded at the revision recorded in `Cargo.lock`, so an
 engine bump can change rendering without a line of Python changing. Engine bumps
 therefore get an entry of their own.
 
+## Unreleased
+
+- Take the extension list from the engine's registry instead of a hand-written
+  copy. Twelve extensions that carve-rs already had become reachable from
+  Python: glossary, index, table of contents (and `::: toc` placement), heading
+  numbers, heading references, heading level shift, code groups, the img fence,
+  color swatches, smart quotes, and tabs. `extensions()` now reports 31 names
+  rather than 19.
+- Registry keys are kebab-case (`math-block`), and the snake_case spellings this
+  binding has always taken (`math_block`) keep working, so existing
+  configuration is unaffected.
+- Embed carve-rs `17300594`.
+
 ## 0.1.0 - 2026-08-12
 
 First release.
