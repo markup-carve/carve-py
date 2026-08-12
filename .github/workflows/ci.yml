@@ -62,6 +62,23 @@ jobs:
             --engine carve-rs --github --max-age-days 14 \
             --form cargo --manifest Cargo.toml --lock Cargo.lock
 
+  # The guard runs on every OS the release workflow runs it on.
+  #
+  # CI here was ubuntu-only, so a script that works on Linux and fails on macOS
+  # could only be discovered by a release - which is how it was discovered: the
+  # 0.1.0 tag lost its macOS wheel and skipped publishing entirely. Seconds per
+  # run to close that gap.
+  panic-guard:
+    name: Panic guard (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/check-panic-unwind.sh
+
   build:
     runs-on: ubuntu-latest
     steps:

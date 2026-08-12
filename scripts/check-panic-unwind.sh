@@ -20,7 +20,15 @@ cd "$(dirname "$0")/.."
 
 # Only inspect git-tracked Cargo.toml files, so vendored/dependency copies
 # under target/ or other ignored paths cannot trip (or defeat) the guard.
-mapfile -t cargo_tomls < <(git ls-files '*Cargo.toml' 'Cargo.toml')
+#
+# Read with a while loop rather than `mapfile`: that is a bash 4 builtin, and
+# macOS ships bash 3.2. On a macOS runner `mapfile` is simply not found, and
+# because this script runs under `set -e` the guard failed the whole job - which
+# is how the 0.1.0 release lost its macOS wheel and skipped publishing.
+cargo_tomls=()
+while IFS= read -r path; do
+  cargo_tomls+=("$path")
+done < <(git ls-files '*Cargo.toml' 'Cargo.toml')
 
 if [ "${#cargo_tomls[@]}" -eq 0 ]; then
   echo "check-panic-unwind: no tracked Cargo.toml found" >&2
