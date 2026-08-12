@@ -10,6 +10,11 @@ therefore get an entry of their own.
 
 Initial release, not yet published to PyPI.
 
+- Embed carve-rs `4ddc24a0`, 40 commits ahead of the previous pin. Brings the
+  exact AST span extents, fence trailing-blank fixes, and locale-aware smart
+  quotes, and clears the last 5 corpus divergences. A `+`-continued table cell
+  no longer reports a `pos`, which is what PART 12 requires of a reassembled
+  node.
 - Convert Carve source to HTML, Markdown, plain text, and ANSI
   (`to_html`, `to_markdown`, `to_plain_text`, `to_ansi`), byte-identical to
   carve-rs for the same input.
