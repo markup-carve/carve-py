@@ -53,17 +53,21 @@ def test_nodes_carry_codepoint_positions():
 def test_a_span_the_engine_cannot_place_is_absent_not_invented():
     # Section 4 again: "MUST NOT emit `pos` with invented values".
     #
-    # The input matters. A single-line cell's text IS a verbatim slice of the
-    # source, and the engine places it - this test used one and asserted the
-    # position was absent, which held only while the engine could not do better.
-    # A cell continued across lines with `+` is genuinely unplaceable: the two
-    # halves are joined by a space the source does not contain, so the value is
-    # not a slice of it at any offset (PART 12 section 1a merges the run; the
-    # merged span would cover the delimiter and the newline).
+    # The input matters. A cell continued across lines with `+` is genuinely
+    # unplaceable: the two halves are joined by a space the source does not
+    # contain, and the halves are not even adjacent - the next column's text
+    # sits between them - so neither the cell nor its value is a slice of the
+    # source at any offset.
+    #
+    # PART 12 names this exact case among the REASSEMBLED nodes that must omit
+    # `pos`: "A table cell continued on a `+` line, the hard break a line block
+    # makes from a soft one, ... all have values that are not a slice of the
+    # source at any offset, so no honest span exists." The omission applies to
+    # the cell itself, not only to the text it carries.
     source = "|= a |= b |\n| x | A long description |\n+     | that continues     |\n"
     cell = carve.parse(source)["children"][0]["rows"][1]["cells"][1]
 
-    assert "pos" in cell, "the cell itself is a slice of the source"
+    assert "pos" not in cell, "a cell reassembled across lines must not claim a span"
     text = cell["children"][0]
     assert text["value"] == "A long description that continues"
     assert "pos" not in text, "a value joined across lines must not claim a span"
