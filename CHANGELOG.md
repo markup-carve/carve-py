@@ -6,9 +6,9 @@ The engine is carve-rs, embedded at the revision recorded in `Cargo.lock`, so an
 engine bump can change rendering without a line of Python changing. Engine bumps
 therefore get an entry of their own.
 
-## Unreleased
+## 0.1.0 - 2026-08-12
 
-Initial release, not yet published to PyPI.
+First release.
 
 - Embed carve-rs `4ddc24a0`, 40 commits ahead of the previous pin. Brings the
   exact AST span extents, fence trailing-blank fixes, and locale-aware smart
