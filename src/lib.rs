@@ -14,9 +14,7 @@
 //! We never reimplement the parser; every call delegates to carve-rs.
 
 use carve_rs::extensions::registry;
-use carve_rs::{
-    CarveExtension, Mode, Options, Profile, ProfileViolationError, StaticRenderers,
-};
+use carve_rs::{CarveExtension, Mode, Options, Profile, ProfileViolationError, StaticRenderers};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;

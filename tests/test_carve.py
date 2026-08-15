@@ -51,7 +51,11 @@ def test_inline_code():
 def test_table():
     out = carve.to_html("| a | b |\n|---|---|\n| 1 | 2 |\n")
     assert "<table>" in out
-    assert "<th>a</th>" in out
+    # PART 10 SST9: a header cell states what it heads, `col` in the leading
+    # header-row run. The bare `<th>a</th>` this used to assert was the output
+    # of an engine that predated the rule, and no other check here would have
+    # noticed the difference.
+    assert '<th scope="col">a</th>' in out
     assert "<td>1</td>" in out
 
 

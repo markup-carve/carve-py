@@ -17,7 +17,16 @@ therefore get an entry of their own.
 - Registry keys are kebab-case (`math-block`), and the snake_case spellings this
   binding has always taken (`math_block`) keep working, so existing
   configuration is unaffected.
-- Embed carve-rs `17300594`.
+- Embed carve-rs `9ff08784`. Rendering changes an existing document can see:
+  a table header cell now carries `scope` (`col` in the leading header-row run,
+  `row` below it, PART 10 SST9); the nine compact semantic names on an inline
+  span render as the element that spells them; a caption on a quote is a
+  figure caption again rather than an attribution; an abbreviation expands
+  inside a span and inside any inline container; an attribute needs a separator
+  before the next one, and a value-less attribute writes as a boolean; a
+  reference resolves inside an inline note, and a footnote inside an unresolved
+  reference stays a footnote; `attrs.keyValues` in the exported AST serializes
+  in the author's source order.
 
 ## 0.1.0 - 2026-08-12
 
