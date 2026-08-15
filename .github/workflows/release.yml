@@ -15,12 +15,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Both manifests, not just pyproject.toml. pyproject is what PyPI
+      # publishes; Cargo.toml is what `carve.__version__` reports, because the
+      # module exposes CARGO_PKG_VERSION. Checking only the first lets a release
+      # that bumped only the first publish a wheel naming one version and
+      # reporting another - the carve-js case, where an exported constant read
+      # 0.1.0 for three releases (markup-carve/carve-js#1074).
+      #
+      # tests/test_release_version.py checks the same pair, plus the changelog,
+      # on every CI run; this is the last chance to catch it.
       - name: The tag matches the packaged version
         run: |
           tag="${GITHUB_REF_NAME#v}"
           version="$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)"
           if [ "$tag" != "$version" ]; then
             echo "tag ${GITHUB_REF_NAME} does not match project version ${version}" >&2
+            exit 1
+          fi
+          crate="$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)"
+          if [ "$tag" != "$crate" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match Cargo.toml version ${crate}, which is what carve.__version__ reports" >&2
             exit 1
           fi
 
