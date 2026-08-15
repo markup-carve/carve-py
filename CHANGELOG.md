@@ -17,7 +17,7 @@ therefore get an entry of their own.
 - Registry keys are kebab-case (`math-block`), and the snake_case spellings this
   binding has always taken (`math_block`) keep working, so existing
   configuration is unaffected.
-- Embed carve-rs `9ff08784`. Rendering changes an existing document can see:
+- Embed carve-rs `98de7874`. Rendering changes an existing document can see:
   a table header cell now carries `scope` (`col` in the leading header-row run,
   `row` below it, PART 10 SST9); the nine compact semantic names on an inline
   span render as the element that spells them; a caption on a quote is a
@@ -27,6 +27,15 @@ therefore get an entry of their own.
   reference resolves inside an inline note, and a footnote inside an unresolved
   reference stays a footnote; `attrs.keyValues` in the exported AST serializes
   in the author's source order.
+- Composite figures (PART 9 section 4c). A **bare** `::: figure` fence is one
+  figure of ordered panels: it renders `<figure class="carve-figure-group">`
+  wrapping a `<div class="carve-figure-panels">`, each panel a
+  `<figure class="carve-figure-panel">`, and a `^ ` line after the closer
+  becomes the group's `<figcaption>` instead of an ordinary paragraph. A fence
+  carrying a title or a `[label]` is unaffected and stays a generic container.
+- A table cell's attribute block binds after its kind and alignment markers, so
+  `{...}` following a cell's `=` marker is read as attributes rather than
+  rendered as cell text.
 
 ## 0.1.0 - 2026-08-12
 
