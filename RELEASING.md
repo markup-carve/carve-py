@@ -30,9 +30,20 @@ All of it happens outside this repository's files.
 ## Per release
 
 1. Move the entries under a version heading in `CHANGELOG.md` and set its date.
-2. Set `project.version` in `pyproject.toml`.
+2. Set the version in **both** manifests: `project.version` in `pyproject.toml`
+   and `package.version` in `Cargo.toml`. They feed different readers - PyPI and
+   `pip show` report the first, `carve.__version__` reports the second, because
+   the module exposes `CARGO_PKG_VERSION`. Bumping only `pyproject.toml`
+   publishes a wheel that names itself one version and reports another, which is
+   how carve-js shipped an exported constant reading 0.1.0 across three releases
+   (`markup-carve/carve-js#1074`).
 3. Tag `vX.Y.Z` and push the tag. The workflow matches `v*` - a bare `0.1.0`
    tag lands but fires nothing, which is a silent no-op rather than an error.
+
+Steps 1 and 2 are checked rather than remembered: `tests/test_release_version.py`
+compares the two manifests and the changelog against each other and against the
+installed module on every CI run, and the release workflow's `guard` job refuses
+a tag that disagrees with either manifest.
 
 ## What the wheel embeds
 
