@@ -22,13 +22,13 @@ import re
 import carve
 import pytest
 
+from corpus_population import require_whole_corpus
+
 CORPUS = os.environ.get("CARVE_SPEC_CORPUS")
 
 pytestmark = pytest.mark.skipif(
     not CORPUS, reason="CARVE_SPEC_CORPUS not set (see .github/workflows/ci.yml)"
 )
-
-MIN_PAIRS = 400
 
 TARGETS = {
     "to_markdown": carve.to_markdown,
@@ -46,10 +46,9 @@ def _sources():
 
 def test_every_target_survives_the_corpus():
     sources = _sources()
-    assert len(sources) >= MIN_PAIRS, (
-        f"only {len(sources)} corpus inputs under {CORPUS}; that is a wiring "
-        "problem, not a clean run"
-    )
+    # "Every target survives the whole corpus" is a claim about the WHOLE
+    # corpus, so the population is checked for equality rather than a floor.
+    require_whole_corpus(CORPUS, len(sources), "corpus inputs found")
 
     failures = []
     for name, render in TARGETS.items():

@@ -38,13 +38,13 @@ import pathlib
 import carve
 import pytest
 
+from corpus_population import require_whole_corpus
+
 CORPUS = os.environ.get("CARVE_SPEC_CORPUS")
 
 pytestmark = pytest.mark.skipif(
     not CORPUS, reason="CARVE_SPEC_CORPUS not set (see .github/workflows/ci.yml)"
 )
-
-MIN_DOCUMENTS = 400
 
 # Recorded by walking every corpus document through this binding. An explicit
 # list rather than a count: a count says "something went missing" and this says
@@ -102,11 +102,10 @@ def test_the_corpus_is_actually_walked():
     # Without this an empty or mistyped directory produces an empty set, every
     # assertion below is vacuous, and the run reads as clean - the same failure
     # shape these tests exist to remove.
-    found = len(_documents())
-    assert found >= MIN_DOCUMENTS, (
-        f"only {found} corpus documents under {CORPUS}; the corpus has ~650, "
-        "so this is a wiring problem, not a clean run"
-    )
+    # Equality, not a floor. `>= 400` against a corpus of over a thousand let a
+    # run through with two thirds of the documents missing, which is a coverage
+    # claim nobody chose; see tests/corpus_population.py.
+    require_whole_corpus(CORPUS, len(_documents()), "corpus documents walked")
 
 
 def test_every_recorded_node_type_still_reaches_the_tree():
