@@ -20,15 +20,13 @@ import pathlib
 import carve
 import pytest
 
+from corpus_population import require_whole_corpus
+
 CORPUS = os.environ.get("CARVE_SPEC_CORPUS")
 
 pytestmark = pytest.mark.skipif(
     not CORPUS, reason="CARVE_SPEC_CORPUS not set (see .github/workflows/ci.yml)"
 )
-
-# The corpus has ~500 pairs. Anything far below that means the path is wrong
-# rather than that the run was clean.
-MIN_PAIRS = 400
 
 
 def _pairs():
@@ -44,11 +42,10 @@ def _pairs():
 
 
 def test_corpus_is_actually_present():
-    pairs = _pairs()
-    assert len(pairs) >= MIN_PAIRS, (
-        f"only {len(pairs)} corpus pairs under {CORPUS}; the corpus has ~500, "
-        "so this is a wiring problem, not a clean run"
-    )
+    # Equality against what the spec declares, not a floor. `>= 400` against a
+    # corpus of over a thousand passed with two thirds of it missing, which is
+    # the condition this test exists to reject; see tests/corpus_population.py.
+    require_whole_corpus(CORPUS, len(_pairs()), "corpus pairs found")
 
 
 def test_corpus_renders_byte_identically():
