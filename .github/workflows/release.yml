@@ -85,10 +85,117 @@ jobs:
           name: sdist
           path: dist/
 
+  # THE ONLY JOB ON THIS PATH THAT ASKS WHETHER THE ARTIFACT IS CORRECT.
+  #
+  # Everything above is paperwork: the tag matches two manifests, no crate sets
+  # panic = "abort", the wheels built. None of it compares a single byte of
+  # output, so a wheel carrying an engine that renders the spec wrongly passed
+  # every check and uploaded - the "check that cannot fail" class in
+  # markup-carve/carve#755, on the one path where it cannot be undone, because
+  # PyPI indexes within minutes and a yank is itself a public event.
+  #
+  # Measured, not feared: this repository's pin sat on 98de787 rendering 75 of
+  # the spec's 1241 documents wrongly, and the sibling binding carve-rb had a
+  # GREEN last `main` run over an artifact that got 24 of them wrong.
+  #
+  # It downloads the wheels the matrix just built rather than rebuilding, so
+  # what is measured is what `publish` uploads, and it runs them from a clean
+  # virtualenv rather than the checkout, because the engine is a compiled
+  # `carve.abi3.so` and a source-tree run would exercise a different binary.
+  # scripts/release-corpus-gate.py refuses an import that does not resolve into
+  # the interpreter's site-packages -- which is what separates an installed
+  # artifact from a source-tree or editable import, and not "outside the
+  # checkout", because the virtualenv below lives in the workspace -- and then
+  # byte-compares every `carve/` member of the wheel against the installed copy,
+  # so a gate pointed at the wrong artifact fails rather than reporting on it.
+  #
+  # It gates rather than reports. `publish` needs this job, so the upload is
+  # unreachable when it exits non-zero. The sibling framework packages
+  # (laravel-carve, symfony-carve, shopware-carve) have the identical
+  # 1241-document comparison running on `schedule` only, printing divergence as
+  # a warning and exiting 0 - green everywhere while shipping an engine that
+  # renders 15.5 percent of the corpus differently.
+  #
+  # WHAT IT DOES NOT COVER: the sdist. `publish` uploads that too, and it is
+  # source rather than a built engine, so the only way to measure it is to build
+  # it - which produces a different artifact from the one uploaded and would be
+  # a gate over its own rebuild. The wheels are what carry the engine, and all
+  # three of them are covered here, each on its own platform because a wheel is
+  # only installable on the platform it was built for.
+  corpus-gate:
+    name: Corpus through the built wheel (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: [build-wheels]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      # The corpus is generated from resources/examples/*.md in the same
+      # checkout, and tests/corpus_population.py reads those pages to derive how
+      # many documents there should be. Both come from this one clone.
+      - name: Check out the spec corpus
+        uses: actions/checkout@v4
+        with:
+          repository: markup-carve/carve
+          path: spec
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download the wheel this release would publish
+        uses: actions/download-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}
+          path: dist
+
+      - name: Run the spec corpus through it
+        shell: bash
+        # Not $PWD: under Git Bash on the Windows runner that is a POSIX path
+        # (/d/a/...) which Python does not resolve, so the corpus would look
+        # absent. github.workspace is native on all three runners.
+        env:
+          CARVE_SPEC_CORPUS: ${{ github.workspace }}/spec/tests/corpus
+        run: |
+          set -euo pipefail
+
+          # Exactly one wheel, or the gate does not know which artifact it is
+          # speaking about. Two would install one and certify the other.
+          count="$(ls dist/*.whl | wc -l | tr -d ' ')"
+          if [ "$count" != "1" ]; then
+            echo "expected exactly one wheel in dist/, found ${count}:" >&2
+            ls -l dist/ >&2
+            exit 1
+          fi
+          wheel="$(ls dist/*.whl)"
+
+          # A clean virtualenv, so the import cannot resolve to anything the
+          # checkout or the runner image already had.
+          python -m venv .gate
+          if [ -x .gate/bin/python ]; then gate=.gate/bin/python; else gate=.gate/Scripts/python.exe; fi
+          "$gate" -m pip install --quiet --upgrade pip
+          "$gate" -m pip install --quiet pytest
+          "$gate" -m pip install --quiet --no-index --find-links dist --force-reinstall carve-lang
+
+          "$gate" scripts/release-corpus-gate.py --wheel "$wheel" --corpus spec/tests/corpus
+
+          # The rest of the suite against the SAME installed wheel. The gate
+          # above is the release blocker; this adds the AST walk, the non-HTML
+          # targets and the version agreement, all measured through the artifact
+          # rather than through a rebuild.
+          "$gate" -m pytest -q
+
   publish:
     name: Publish to PyPI
     runs-on: ubuntu-latest
-    needs: [build-wheels, build-sdist]
+    # corpus-gate is what makes this unreachable over a wrong artifact. Ordering
+    # the check inside this job would not: a step that runs before the upload in
+    # the same job is one `continue-on-error`, one reordering or one `if:` away
+    # from being advisory, and the upload would still have the artifact in hand.
+    needs: [build-wheels, build-sdist, corpus-gate]
     permissions:
       id-token: write
     environment:

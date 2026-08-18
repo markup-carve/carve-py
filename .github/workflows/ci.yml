@@ -140,6 +140,16 @@ jobs:
           repository: markup-carve/carve
           path: spec
 
+      # The release gate runs only on a pushed tag, so between releases nothing
+      # would notice it breaking - a gate that has rotted since the last release
+      # is discovered at the one moment it is load-bearing. Running its script
+      # here, against the wheel this job already built and installed, keeps it
+      # exercised on every pull request. The release job's own wiring (which
+      # artifact it downloads, that `publish` cannot be reached without it) is
+      # not exercised by this; only the gate's body is.
+      - name: The release gate's own script, over the wheel built here
+        run: python scripts/release-corpus-gate.py --wheel "$(ls dist/*.whl)" --corpus "${{ github.workspace }}/spec/tests/corpus"
+
       - name: pytest
         env:
           CARVE_SPEC_CORPUS: ${{ github.workspace }}/spec/tests/corpus
