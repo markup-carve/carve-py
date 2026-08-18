@@ -14,7 +14,7 @@ therefore get an entry of their own.
   (PART 9 section 25, markup-carve/carve#1320). The sanitizer read only the
   leading scheme of the value, which vouches for the whole value only where the
   whole value is one URL, so `srcset="safe.png 1x, javascript:alert(1) 2x"`
-  passed on its second entry. `srcset`, `ping`, `imagesrcset` and `archive` are
+  passed on its second entry. `srcset`, `imagesrcset`, `ping` and `attributionsrc` are
   now split and every candidate is read. The engine embedded in `0.1.0`
   predates the fix, so every wheel published so far carries the defect.
 
