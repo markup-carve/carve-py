@@ -6,7 +6,19 @@ The engine is carve-rs, embedded at the revision recorded in `Cargo.lock`, so an
 engine bump can change rendering without a line of Python changing. Engine bumps
 therefore get an entry of their own.
 
-## 0.1.1 - 2026-08-12
+## 0.1.1 - 2026-08-18
+
+### Security
+
+- A list-valued URL attribute is probed at every candidate, not at its head
+  (PART 9 section 25, markup-carve/carve#1320). The sanitizer read only the
+  leading scheme of the value, which vouches for the whole value only where the
+  whole value is one URL, so `srcset="safe.png 1x, javascript:alert(1) 2x"`
+  passed on its second entry. `srcset`, `ping`, `imagesrcset` and `archive` are
+  now split and every candidate is read. The engine embedded in `0.1.0`
+  predates the fix, so every wheel published so far carries the defect.
+
+### Everything else
 
 - Take the extension list from the engine's registry instead of a hand-written
   copy. Twelve extensions that carve-rs already had become reachable from
@@ -17,7 +29,7 @@ therefore get an entry of their own.
 - Registry keys are kebab-case (`math-block`), and the snake_case spellings this
   binding has always taken (`math_block`) keep working, so existing
   configuration is unaffected.
-- Embed carve-rs `98de7874`. Rendering changes an existing document can see:
+- Embed carve-rs `0.1.3` (`a33c42ad`). Rendering changes an existing document can see:
   a table header cell now carries `scope` (`col` in the leading header-row run,
   `row` below it, PART 10 SST9); the nine compact semantic names on an inline
   span render as the element that spells them; a caption on a quote is a
