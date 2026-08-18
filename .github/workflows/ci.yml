@@ -267,6 +267,10 @@ jobs:
           set -e
           python -m venv .drift
           .drift/bin/python -m pip install --quiet --upgrade pip
+          # pytest is not decoration here: tests/corpus_population.py, the one
+          # derivation of how big the corpus should be, raises pytest.Failed on
+          # a missing source page, so importing it needs pytest present.
+          .drift/bin/python -m pip install --quiet pytest
           .drift/bin/python -m pip install --quiet --no-index --find-links dist --force-reinstall carve-lang
           # The gate exits non-zero on divergence. Here divergence is the thing
           # being reported, so the exit status is discarded and the LOG is what
