@@ -7,3 +7,6 @@ mkdocs-proof/_site/
 .venv/
 
 *.egg-info/
+
+# The release gate builds its virtualenv here (see .github/workflows/release.yml).
+.gate/
