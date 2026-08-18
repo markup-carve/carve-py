@@ -134,10 +134,62 @@ jobs:
       # current one. Everything above asserts hand-written expectations, which a
       # drifted engine satisfies happily -- that is how the pin managed to sit
       # months behind with CI green.
-      - name: Check out the spec corpus
+      #
+      # AGAINST THE SPEC COMMIT THE PINNED ENGINE PINS, not against spec main.
+      # That difference is deliberate and it is a NARROWING, so it is worth
+      # stating why.
+      #
+      # This used to check out markup-carve/carve at its default branch, which
+      # asks: is this wheel conformant with the spec as it stands right now?
+      # carve-py cannot answer yes to that by any change of its own. The spec
+      # adds documents continuously - it gained corpus category 367 on
+      # 2026-08-18 while this repository's v0.1.1 was in flight - and an engine
+      # implements them some time later. In between, every pull request here is
+      # red for a reason that has nothing to do with its diff, and the fix lives
+      # in another repository. A gate in that state teaches every reader to skip
+      # it, and a gate nobody reads is a check that cannot fail arriving by a
+      # different road (markup-carve/carve#755).
+      #
+      # It was not hypothetical. The v0.1.1 tag built all three wheels and
+      # published its GitHub release, and then SKIPPED `Publish to PyPI` because
+      # release.yml carried this same spec-main checkout and held the wheel to
+      # two category-367 documents that do not exist at the spec commit v0.1.1
+      # pins, and that no engine revision available that day rendered. PyPI kept
+      # serving the vulnerable 0.1.0 while the release page said 0.1.1.
+      #
+      # The question this repository CAN answer, and the only one it can act on,
+      # is whether the wheel is as conformant as the engine it was built from.
+      # scripts/pinned-spec-commit.py resolves that: the carve-rs revision this
+      # manifest pins, and that revision's tests/spec gitlink. Bumping the pin
+      # is the action that clears a failure here, and it is an action taken in
+      # this repository.
+      #
+      # WHAT THIS DOES NOT BUY, said plainly: a wheel that is simply OLD, with
+      # the pin and the engine agreeing on a carve-rs from a month ago, passes
+      # here. That is what corpus-drift below reports, and it is why deleting
+      # corpus-drift would turn this into a loosening rather than a re-aiming.
+      - name: Check out carve-rs
+        uses: actions/checkout@v4
+        with:
+          repository: markup-carve/carve-rs
+          path: carve-rs
+          # fetch-depth: 0 so the pinned revision can be read as a tree. A
+          # shallow clone has the tip's tree and nothing else, and the pin is
+          # deliberately not required to be the tip.
+          fetch-depth: 0
+
+      - name: Resolve the spec commit the pinned engine pins
+        id: pin
+        run: |
+          spec="$(python3 scripts/pinned-spec-commit.py \
+            --engine carve-rs --manifest Cargo.toml --lock Cargo.lock)"
+          echo "spec=$spec" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the spec corpus that engine was written against
         uses: actions/checkout@v4
         with:
           repository: markup-carve/carve
+          ref: ${{ steps.pin.outputs.spec }}
           path: spec
 
       # The release gate runs only on a pushed tag, so between releases nothing
@@ -154,3 +206,98 @@ jobs:
         env:
           CARVE_SPEC_CORPUS: ${{ github.workspace }}/spec/tests/corpus
         run: pytest -q
+
+      # For corpus-drift below. It measures the SAME wheel this job gated,
+      # rather than building a second one: two builds would be two artifacts,
+      # and the drift number would be about the one nothing else looked at.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-wheel
+          path: dist/*.whl
+          if-no-files-found: error
+          retention-days: 7
+
+  # The same corpus comparison against spec MAIN, REPORTED and not gated.
+  #
+  # This is the other half of re-aiming the corpus gate above, and it is not
+  # optional. The question that gate no longer asks - how far is this wheel from
+  # the spec as it stands today - is still worth knowing; it is simply not
+  # something a pull request here can fix, so it must not block one. Deleting
+  # this job would leave the drift invisible and turn the re-aiming into a
+  # loosening. carve-go carries the identical pair for the identical reason.
+  #
+  # The schedule at the top of this file is what makes it useful: the spec moves
+  # without a commit here, so a push-triggered run alone would report the state
+  # of the day someone last touched this repository.
+  #
+  # IT IS NOT A CHECK THAT CANNOT FAIL. It never fails ON the number, but it
+  # fails when it did not MEASURE one: a corpus that moved, a spec layout this
+  # no longer finds, a wheel that will not install. Those are the ways a
+  # reporting job silently becomes decoration, and the guard against them is
+  # requiring evidence of a measurement rather than an exit status - the run has
+  # to have logged either a divergence count or a byte-identical count.
+  corpus-drift:
+    name: Report the drift against spec main
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out the spec corpus at main
+        uses: actions/checkout@v4
+        with:
+          repository: markup-carve/carve
+          path: spec
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download the wheel the corpus gate ran over
+        uses: actions/download-artifact@v4
+        with:
+          name: ci-wheel
+          path: dist
+
+      - name: Report the drift
+        shell: bash
+        run: |
+          set -uo pipefail
+          wheel="$(ls dist/*.whl)"
+          set -e
+          python -m venv .drift
+          .drift/bin/python -m pip install --quiet --upgrade pip
+          # pytest is not decoration here: tests/corpus_population.py, the one
+          # derivation of how big the corpus should be, raises pytest.Failed on
+          # a missing source page, so importing it needs pytest present.
+          .drift/bin/python -m pip install --quiet pytest
+          .drift/bin/python -m pip install --quiet --no-index --find-links dist --force-reinstall carve-lang
+          # The gate exits non-zero on divergence. Here divergence is the thing
+          # being reported, so the exit status is discarded and the LOG is what
+          # is read; a run that logged no count at all still fails below.
+          set +e
+          .drift/bin/python scripts/release-corpus-gate.py \
+            --wheel "$wheel" --corpus spec/tests/corpus > drift.log 2>&1
+          set -e
+          cat drift.log
+          spec="$(git -C spec rev-parse --short HEAD)"
+          diverging="$(grep -oE '[0-9]+ of [0-9]+ corpus documents render differently' drift.log | tail -1 || true)"
+          identical="$(grep -oE '[0-9]+/[0-9]+ documents byte-identical' drift.log | tail -1 || true)"
+          if [ -n "$diverging" ]; then
+            headline="$diverging at spec main ($spec)"
+          elif [ -n "$identical" ]; then
+            headline="0 diverging, $identical at spec main ($spec)"
+          else
+            echo "::error::the drift run logged neither a divergence count nor a byte-identical count, so nothing was measured" >&2
+            tail -40 drift.log >&2
+            exit 1
+          fi
+          echo "$headline"
+          echo "::notice::$headline"
+          {
+            echo "## The published wheel against spec main"
+            echo
+            echo "$headline"
+            echo
+            grep -E '^  [0-9]+-' drift.log | sed -E 's/^  /- `/; s/$/`/' || true
+          } >> "$GITHUB_STEP_SUMMARY"

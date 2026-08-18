@@ -41,7 +41,8 @@ def test_ci_always_has_the_corpus_wired_up():
     assert CORPUS, (
         "CARVE_SPEC_CORPUS is unset in a CI run. The corpus tests are the only checks that "
         "measure this binding against the spec, and unset they skip and report success. Set it "
-        'from the spec checkout (see the "Check out the spec corpus" step in '
+        'from the spec checkout (see the "Check out the spec corpus that engine was '
+        'written against" step in '
         ".github/workflows/ci.yml); do not let this run report success."
     )
     assert pathlib.Path(CORPUS).is_dir(), (
