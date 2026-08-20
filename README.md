@@ -46,6 +46,16 @@ carve.to_html("/italic/ and *bold*")
 # Enable opt-in extensions by name
 html = carve.to_html(source, extensions=["math_block", "list_table"])
 
+# Configure enabled extensions (the mapping is keyword-only)
+html = carve.to_html(
+    source,
+    extensions=["heading-permalinks", "tabs"],
+    extension_options={
+        "heading-permalinks": {"aria_label": "Back to text", "lowercase_ids": True},
+        "tabs": {"mode": "aria"},
+    },
+)
+
 # Dedicated explicit-list variant
 html = carve.to_html_with_extensions(source, ["autolink"])
 
@@ -67,6 +77,9 @@ carve.extensions()
 ```
 
 Passing an unknown extension name raises `ValueError`.
+`extension_options` only accepts enabled extension names and their documented
+option keys; unknown names, unknown keys, invalid enum values and options for an
+extension that takes none are rejected instead of silently using defaults.
 
 The names come from the engine itself, so `carve.extensions()` is the list this
 build actually accepts rather than a list documented here that could fall behind

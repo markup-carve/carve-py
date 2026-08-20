@@ -10,6 +10,7 @@ __version__: str
 # the TeX source and a ``display`` flag (``True`` for block/display math,
 # ``False`` for inline) and returns HTML: ``(str, bool) -> str``.
 Renderer = Union[Callable[[str], str], Callable[[str, bool], str]]
+ExtensionOptions = Dict[str, Dict[str, Any]]
 
 def to_html(
     source: str,
@@ -20,6 +21,7 @@ def to_html(
     safe: bool = False,
     profile: Optional[str] = None,
     *,
+    extension_options: Optional[ExtensionOptions] = None,
     lowercase_heading_ids: Optional[bool] = None,
     positions: Optional[bool] = None,
     sections: Optional[bool] = None,
@@ -87,6 +89,7 @@ def to_html_with_extensions(
     safe: bool = False,
     profile: Optional[str] = None,
     *,
+    extension_options: Optional[ExtensionOptions] = None,
     lowercase_heading_ids: Optional[bool] = None,
     positions: Optional[bool] = None,
     sections: Optional[bool] = None,
@@ -107,6 +110,8 @@ def to_markdown(
     source: str,
     extensions: Optional[List[str]] = None,
     profile: Optional[str] = None,
+    *,
+    extension_options: Optional[ExtensionOptions] = None,
 ) -> str:
     """Convert Carve source to Markdown (inherently static; no ``mode``).
 
@@ -120,6 +125,8 @@ def to_plain_text(
     source: str,
     extensions: Optional[List[str]] = None,
     profile: Optional[str] = None,
+    *,
+    extension_options: Optional[ExtensionOptions] = None,
 ) -> str:
     """Convert Carve source to plain text (inherently static; no ``mode``).
 
@@ -132,6 +139,8 @@ def to_ansi(
     source: str,
     extensions: Optional[List[str]] = None,
     profile: Optional[str] = None,
+    *,
+    extension_options: Optional[ExtensionOptions] = None,
 ) -> str:
     """Convert Carve source to ANSI-colored text (inherently static; no ``mode``).
 

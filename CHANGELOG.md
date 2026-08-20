@@ -10,6 +10,9 @@ therefore get an entry of their own.
 
 ### Added
 
+- Add keyword-only `extension_options` mappings to every rendering function
+  that accepts `extensions`, exposing all thirteen configurable engine
+  extensions with strict extension-name, option-key, type and enum validation.
 - Expose the engine-level `lowercase_heading_ids`, `positions`, `sections`,
   `source_lines`, `mention_url`, `tag_url` and `profile_base_host` options as
   keyword-only arguments on the HTML and AST entry points. An omitted argument
