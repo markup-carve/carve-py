@@ -269,3 +269,77 @@ def test_plantuml_preset_emits_pre_class_plantuml():
 def test_graphviz_preset_claims_dot_and_graphviz():
     out = carve.to_html("``` dot\na -> b\n```", extensions=["fenced_render_graphviz"])
     assert '<pre class="graphviz">' in out
+def test_extension_options_validation_and_behavior():
+    with pytest.raises(ValueError, match="not in extensions"):
+        carve.to_html("# Hi", extensions=["tabs"], extension_options={"heading-permalinks": {"aria_label": "Back"}})
+    with pytest.raises(ValueError, match=r"unknown carve extension.*supported"):
+        carve.to_html("# Hi", extensions=["tabs"], extension_options={"bogus": {}})
+    with pytest.raises(ValueError, match=r"heading-permalinks.*aria_label"):
+        carve.to_html("# Hi", extensions=["heading-permalinks"], extension_options={"heading-permalinks": {"aria_lable": "Back"}})
+    with pytest.raises((TypeError, ValueError), match="lowercase_ids"):
+        carve.to_html("# Hi", extensions=["heading-permalinks"], extension_options={"heading-permalinks": {"lowercase_ids": "yes"}})
+    with pytest.raises(ValueError, match="takes no options"):
+        carve.to_html("text", extensions=["details"], extension_options={"details": {}})
+
+    out = carve.to_html("# Mixed Case", extensions=["heading-permalinks"], extension_options={"heading-permalinks": {"aria_label": "Zurück zum Text", "lowercase_ids": True}}, lowercase_heading_ids=True)
+    assert 'href="#mixed-case"' in out
+    assert 'aria-label="Zurück zum Text"' in out
+
+
+def test_extension_options_enum_validation():
+    src = ":::: tabs\n::: tab [One]\nFirst.\n:::\n::::"
+    out = carve.to_html(src, extensions=["tabs"], extension_options={"tabs": {"mode": "aria"}})
+    assert 'role="tablist"' in out
+    with pytest.raises(ValueError, match=r"mode.*css.*aria"):
+        carve.to_html(src, extensions=["tabs"], extension_options={"tabs": {"mode": "script"}})
+
+
+@pytest.mark.parametrize("name, option", [
+    ("autolink", {"allowed_schemes": ["https"]}), ("code-group", {"wrapper_class": "cg"}),
+    ("external-links", {"nofollow": True}), ("fenced-render", {"languages": ["diagram"]}),
+    ("heading-level-shift", {"shift": 2}), ("heading-numbers", {"crossref": "title"}),
+    ("heading-permalinks", {"levels": [2]}), ("heading-reference", {"css_class": "ref"}),
+    ("math-block", {"language": "tex"}), ("img-fence", {"allow_style": True}),
+    ("table-of-contents", {"list_type": "ol", "position": "bottom"}),
+    ("tabs", {"id_prefix": "custom"}), ("wikilinks", {"new_window": True}),
+])
+def test_all_extension_option_structs_are_constructible(name, option):
+    carve.to_html("# Heading", extensions=[name], extension_options={name: option})
+
+
+def test_options_reach_the_extension_whichever_spelling_each_side_uses():
+    """Validation normalized the name and the lookup did not, so a snake_case
+    config key on a kebab-case extension was accepted and then dropped without
+    a word - configuring something and having nothing happen is the failure
+    this whole feature exists to remove."""
+    for exts, opts in (
+        (["heading-permalinks"], {"heading_permalinks": {"aria_label": "MARKER"}}),
+        (["heading_permalinks"], {"heading-permalinks": {"aria_label": "MARKER"}}),
+    ):
+        html = carve.to_html("# T", extensions=exts, extension_options=opts)
+        assert 'aria-label="MARKER"' in html, (exts, opts)
+
+
+def test_fenced_render_derives_the_defaults_it_is_not_given():
+    """`FencedRenderOptions::new` derives `tag` from the mode, `css_class` from
+    the first language and `figure_class` from `css_class`. Pre-setting them
+    and overwriting afterwards left a json-mode block wearing a `pre` tag."""
+    source = "``` mermaid\ngraph LR\nA-->B\n```\n"
+
+    json_mode = carve.to_html(
+        source,
+        extensions=["fenced-render"],
+        extension_options={"fenced-render": {"content_mode": "json"}},
+    )
+    assert json_mode.startswith('<div class="mermaid">'), json_mode[:60]
+
+    renamed = carve.to_html(
+        "``` diagram\nx\n```\n",
+        extensions=["fenced-render"],
+        extension_options={"fenced-render": {"languages": ["diagram"]}},
+    )
+    assert renamed.startswith('<pre class="diagram">'), renamed[:60]
+
+    assert carve.to_html(source, extensions=["fenced-render"]).startswith(
+        '<pre class="mermaid">'
+    )

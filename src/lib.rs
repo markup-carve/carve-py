@@ -14,6 +14,14 @@
 //! We never reimplement the parser; every call delegates to carve-rs.
 
 use carve_rs::extensions::registry;
+use carve_rs::extensions::{
+    Autolink, AutolinkOptions, CodeGroup, CodeGroupOptions, ContentMode, CrossrefStyle,
+    ExternalLinks, ExternalLinksOptions, FencedRender, FencedRenderOptions, HeadingLevelShift,
+    HeadingLevelShiftOptions, HeadingNumbers, HeadingNumbersOptions, HeadingPermalinks,
+    HeadingPermalinksOptions, HeadingReference, HeadingReferenceOptions, ImgFence, ListType,
+    MathBlock, MathBlockOptions, Position, TableOfContents, TableOfContentsOptions, Tabs, TabsMode,
+    TabsOptions, Wikilinks, WikilinksOptions,
+};
 use carve_rs::{CarveExtension, Mode, Options, Profile, ProfileViolationError, StaticRenderers};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -67,6 +75,245 @@ fn build_extension(name: &str) -> PyResult<Box<dyn CarveExtension>> {
     })
 }
 
+fn option_error(extension: &str, key: &str, accepted: &[&str]) -> PyErr {
+    PyValueError::new_err(format!(
+        "unknown option {key:?} for extension {extension:?} (accepted: {})",
+        accepted.join(", ")
+    ))
+}
+
+fn check_keys(dict: &Bound<'_, PyDict>, extension: &str, accepted: &[&str]) -> PyResult<()> {
+    for (key, _) in dict.iter() {
+        let key: String = key.extract()?;
+        if !accepted.contains(&key.as_str()) {
+            return Err(option_error(extension, &key, accepted));
+        }
+    }
+    Ok(())
+}
+
+macro_rules! set_opt {
+    ($dict:expr, $opts:expr, $name:expr, $field:ident, $ty:ty) => {
+        if let Some(value) = $dict.get_item(stringify!($field))? {
+            $opts.$field = value.extract::<$ty>().map_err(|_| {
+                pyo3::exceptions::PyTypeError::new_err(format!(
+                    "option {:?} for extension {:?} has the wrong type",
+                    stringify!($field),
+                    $name
+                ))
+            })?;
+        }
+    };
+}
+
+fn enum_value<T: Copy>(
+    dict: &Bound<'_, PyDict>,
+    key: &str,
+    extension: &str,
+    values: &[(&str, T)],
+) -> PyResult<Option<T>> {
+    let Some(value) = dict.get_item(key)? else {
+        return Ok(None);
+    };
+    let value: String = value.extract().map_err(|_| {
+        pyo3::exceptions::PyTypeError::new_err(format!(
+            "option {key:?} for extension {extension:?} has the wrong type"
+        ))
+    })?;
+    values.iter().find(|(name, _)| *name == value).map(|(_, v)| Some(*v)).ok_or_else(||
+        PyValueError::new_err(format!("unknown value {value:?} for option {key:?} of extension {extension:?} (accepted: {})", values.iter().map(|(n, _)| *n).collect::<Vec<_>>().join(", "))))
+}
+
+fn build_configured_extension(
+    name: &str,
+    dict: &Bound<'_, PyDict>,
+) -> PyResult<Box<dyn CarveExtension>> {
+    let key = registry_key(name);
+    // Validate the name through the registry first, keeping its established error.
+    if registry::by_key(&key).is_none() {
+        return build_extension(name);
+    }
+    macro_rules! configured {
+        ($ty:ty, $ctor:path, [$($field:ident : $ft:ty),* $(,)?]) => {{
+            const KEYS: &[&str] = &[$(stringify!($field)),*];
+            check_keys(dict, &key, KEYS)?;
+            let mut opts = <$ty>::default();
+            $(set_opt!(dict, opts, &key, $field, $ft);)*
+            Ok(Box::new($ctor(opts)) as Box<dyn CarveExtension>)
+        }};
+    }
+    match key.as_str() {
+        "autolink" => {
+            configured!(AutolinkOptions, Autolink::with_options, [allowed_schemes: Vec<String>])
+        }
+        "code-group" => {
+            configured!(CodeGroupOptions, CodeGroup::with_options, [wrapper_class: String, panel_class: String, label_class: String, radio_class: String, id_prefix: String])
+        }
+        "external-links" => {
+            configured!(ExternalLinksOptions, ExternalLinks::with_options, [target: String, rel: String, nofollow: bool])
+        }
+        "heading-level-shift" => {
+            configured!(HeadingLevelShiftOptions, HeadingLevelShift::with_options, [shift: u8])
+        }
+        "heading-permalinks" => {
+            configured!(HeadingPermalinksOptions, HeadingPermalinks::with_options, [symbol: String, css_class: String, aria_label: String, levels: Vec<u8>, prepend: bool, show_on_hover: bool, copy_to_clipboard: bool, lowercase_ids: bool])
+        }
+        "heading-reference" => {
+            configured!(HeadingReferenceOptions, HeadingReference::with_options, [css_class: String])
+        }
+        "math-block" => configured!(MathBlockOptions, MathBlock::with_options, [language: String]),
+        "wikilinks" => {
+            configured!(WikilinksOptions, Wikilinks::with_options, [css_class: String, new_window: bool])
+        }
+        "heading-numbers" => {
+            const KEYS: &[&str] = &["min_level", "label", "crossref"];
+            check_keys(dict, &key, KEYS)?;
+            let mut opts = HeadingNumbersOptions::default();
+            set_opt!(dict, opts, &key, min_level, u8);
+            set_opt!(dict, opts, &key, label, String);
+            if let Some(v) = enum_value(
+                dict,
+                "crossref",
+                &key,
+                &[
+                    ("number", CrossrefStyle::Number),
+                    ("number-title", CrossrefStyle::NumberTitle),
+                    ("title", CrossrefStyle::Title),
+                ],
+            )? {
+                opts.crossref = v;
+            }
+            Ok(Box::new(HeadingNumbers::with_options(opts)))
+        }
+        "table-of-contents" => {
+            const KEYS: &[&str] = &[
+                "min_level",
+                "max_level",
+                "list_type",
+                "css_class",
+                "position",
+                "lowercase_ids",
+            ];
+            check_keys(dict, &key, KEYS)?;
+            let mut opts = TableOfContentsOptions::default();
+            set_opt!(dict, opts, &key, min_level, u8);
+            set_opt!(dict, opts, &key, max_level, u8);
+            set_opt!(dict, opts, &key, css_class, String);
+            set_opt!(dict, opts, &key, lowercase_ids, bool);
+            if let Some(v) = enum_value(
+                dict,
+                "list_type",
+                &key,
+                &[("ul", ListType::Ul), ("ol", ListType::Ol)],
+            )? {
+                opts.list_type = v;
+            }
+            if let Some(v) = enum_value(
+                dict,
+                "position",
+                &key,
+                &[("top", Position::Top), ("bottom", Position::Bottom)],
+            )? {
+                opts.position = v;
+            }
+            Ok(Box::new(TableOfContents::with_options(opts)))
+        }
+        "tabs" => {
+            const KEYS: &[&str] = &[
+                "mode",
+                "wrapper_class",
+                "tab_class",
+                "label_class",
+                "radio_class",
+                "id_prefix",
+            ];
+            check_keys(dict, &key, KEYS)?;
+            let mut opts = TabsOptions::default();
+            set_opt!(dict, opts, &key, wrapper_class, String);
+            set_opt!(dict, opts, &key, tab_class, String);
+            set_opt!(dict, opts, &key, label_class, String);
+            set_opt!(dict, opts, &key, radio_class, String);
+            set_opt!(dict, opts, &key, id_prefix, String);
+            if let Some(v) = enum_value(
+                dict,
+                "mode",
+                &key,
+                &[("css", TabsMode::Css), ("aria", TabsMode::Aria)],
+            )? {
+                opts.mode = v;
+            }
+            Ok(Box::new(Tabs::with_options(opts)))
+        }
+        "fenced-render" => {
+            const KEYS: &[&str] = &[
+                "languages",
+                "css_class",
+                "tag",
+                "content_mode",
+                "wrap_in_figure",
+                "figure_class",
+            ];
+            check_keys(dict, &key, KEYS)?;
+            let mode = enum_value(
+                dict,
+                "content_mode",
+                &key,
+                &[("text", ContentMode::Text), ("json", ContentMode::Json)],
+            )?
+            .unwrap_or(ContentMode::Text);
+            // Built through the engine's constructor with what the caller
+            // gave, because it DERIVES the rest: `css_class` from the first
+            // language, `tag` from the mode (`div` for json, else `pre`), and
+            // `figure_class` from `css_class`. Setting those first and
+            // overwriting them afterwards produced a json-mode block still
+            // wearing a `pre` tag.
+            let languages = dict
+                .get_item("languages")?
+                .map(|v| v.extract::<Vec<String>>())
+                .transpose()?
+                .unwrap_or_else(|| vec!["mermaid".into()]);
+            let css_class = dict
+                .get_item("css_class")?
+                .map(|v| v.extract::<String>())
+                .transpose()?;
+            let tag = dict
+                .get_item("tag")?
+                .map(|v| v.extract::<String>())
+                .transpose()?;
+            let mut opts = FencedRenderOptions::new(languages, css_class, tag, mode);
+            set_opt!(dict, opts, &key, wrap_in_figure, bool);
+            set_opt!(dict, opts, &key, figure_class, String);
+            Ok(Box::new(FencedRender::with_options(opts)))
+        }
+        "img-fence" => {
+            const KEYS: &[&str] = &[
+                "allow_style",
+                "allow_links",
+                "allow_animation",
+                "allow_external_images",
+            ];
+            check_keys(dict, &key, KEYS)?;
+            let get = |k: &str| -> PyResult<bool> {
+                Ok(dict
+                    .get_item(k)?
+                    .map(|v| v.extract::<bool>())
+                    .transpose()?
+                    .unwrap_or(false))
+            };
+            Ok(Box::new(
+                ImgFence::new()
+                    .allow_style(get("allow_style")?)
+                    .allow_links(get("allow_links")?)
+                    .allow_animation(get("allow_animation")?)
+                    .allow_external_images(get("allow_external_images")?),
+            ))
+        }
+        _ => Err(PyValueError::new_err(format!(
+            "extension {key:?} takes no options"
+        ))),
+    }
+}
+
 /// Every extension name this build accepts, taken from the engine.
 ///
 /// This used to be a hand-written array beside a hand-written match, and
@@ -79,8 +326,50 @@ fn supported() -> Vec<String> {
 }
 
 /// Build an owned vec of boxed extensions from the requested names.
-fn boxed_extensions(names: &[String]) -> PyResult<Vec<Box<dyn CarveExtension>>> {
-    names.iter().map(|n| build_extension(n)).collect()
+fn boxed_extensions(
+    names: &[String],
+    configs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Vec<Box<dyn CarveExtension>>> {
+    if let Some(configs) = configs {
+        for (name, _) in configs.iter() {
+            let name: String = name.extract()?;
+            build_extension(&name)?;
+            if !names
+                .iter()
+                .any(|enabled| registry_key(enabled) == registry_key(&name))
+            {
+                return Err(PyValueError::new_err(format!(
+                    "extension {name:?} has options but is not in extensions"
+                )));
+            }
+        }
+    }
+    names
+        .iter()
+        .map(|name| {
+            if let Some(configs) = configs {
+                // Matched on the NORMALIZED key, both sides. Comparing the
+                // spellings directly accepted `heading_permalinks` during
+                // validation and then failed to find it here, so the options
+                // were dropped without a word - the exact silence this whole
+                // feature exists to remove.
+                let wanted = registry_key(name);
+                for (config_name, value) in configs.iter() {
+                    let config_name: String = config_name.extract()?;
+                    if registry_key(&config_name) != wanted {
+                        continue;
+                    }
+                    let dict = value.cast::<PyDict>().map_err(|_| {
+                        pyo3::exceptions::PyTypeError::new_err(format!(
+                            "options for extension {name:?} must be a mapping"
+                        ))
+                    })?;
+                    return build_configured_extension(name, dict);
+                }
+            }
+            build_extension(name)
+        })
+        .collect()
 }
 
 /// Map a Python-facing mode string to a carve-rs [`Mode`].
@@ -218,6 +507,7 @@ fn build_symbols(symbols: &Bound<'_, PyDict>) -> PyResult<Vec<(String, String)>>
 fn render<F>(
     source: &str,
     names: &[String],
+    extension_options: Option<&Bound<'_, PyDict>>,
     mode: Mode,
     renderers: StaticRenderers,
     symbols: &[(String, String)],
@@ -229,7 +519,7 @@ fn render<F>(
 where
     F: FnOnce(&str, &Options<'_>) -> Result<String, ProfileViolationError>,
 {
-    let owned = boxed_extensions(names)?;
+    let owned = boxed_extensions(names, extension_options)?;
     let mut options = Options::new().with_mode(mode).with_renderers(renderers);
     for ext in &owned {
         options = options.with_extension(ext.as_ref());
@@ -339,7 +629,7 @@ fn resolve_mode_and_renderers(
 /// deliberate: processor configuration is trusted. NEVER build a symbols map
 /// out of untrusted / user-supplied input.
 #[pyfunction]
-#[pyo3(signature = (source, extensions = None, mode = "interactive", renderers = None, symbols = None, safe = false, profile = None, *, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
+#[pyo3(signature = (source, extensions = None, mode = "interactive", renderers = None, symbols = None, safe = false, profile = None, *, extension_options = None, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
 #[allow(clippy::too_many_arguments)]
 fn to_html(
     source: &str,
@@ -349,6 +639,7 @@ fn to_html(
     symbols: Option<Bound<'_, PyDict>>,
     safe: bool,
     profile: Option<&str>,
+    extension_options: Option<Bound<'_, PyDict>>,
     lowercase_heading_ids: Option<bool>,
     positions: Option<bool>,
     sections: Option<bool>,
@@ -382,6 +673,7 @@ fn to_html(
         && static_renderers.math.is_none()
         && !safe
         && profile.is_none()
+        && extension_options.is_none()
         && engine_options == EngineOptions::default()
     {
         return Ok(carve_rs::to_html(source));
@@ -389,6 +681,7 @@ fn to_html(
     render(
         source,
         &names,
+        extension_options.as_ref(),
         parsed_mode,
         static_renderers,
         &symbol_pairs,
@@ -404,7 +697,7 @@ fn to_html(
 /// Supports the same `mode` / `renderers` / `symbols` keywords as [`to_html`]
 /// (including the trusted-raw contract on symbol values).
 #[pyfunction]
-#[pyo3(signature = (source, extensions, mode = "interactive", renderers = None, symbols = None, safe = false, profile = None, *, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
+#[pyo3(signature = (source, extensions, mode = "interactive", renderers = None, symbols = None, safe = false, profile = None, *, extension_options = None, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
 #[allow(clippy::too_many_arguments)]
 fn to_html_with_extensions(
     source: &str,
@@ -414,6 +707,7 @@ fn to_html_with_extensions(
     symbols: Option<Bound<'_, PyDict>>,
     safe: bool,
     profile: Option<&str>,
+    extension_options: Option<Bound<'_, PyDict>>,
     lowercase_heading_ids: Option<bool>,
     positions: Option<bool>,
     sections: Option<bool>,
@@ -430,6 +724,7 @@ fn to_html_with_extensions(
     render(
         source,
         &extensions,
+        extension_options.as_ref(),
         parsed_mode,
         static_renderers,
         &symbol_pairs,
@@ -455,20 +750,22 @@ fn is_core(extensions: &Option<Vec<String>>) -> bool {
 
 /// Convert Carve source to Markdown.
 #[pyfunction]
-#[pyo3(signature = (source, extensions = None, profile = None))]
+#[pyo3(signature = (source, extensions = None, profile = None, *, extension_options = None))]
 fn to_markdown(
     source: &str,
     extensions: Option<Vec<String>>,
     profile: Option<&str>,
+    extension_options: Option<Bound<'_, PyDict>>,
 ) -> PyResult<String> {
     // The fast path must not swallow `profile`: returning here with a profile
     // set would accept the keyword and silently ignore it.
-    if is_core(&extensions) && profile.is_none() {
+    if is_core(&extensions) && profile.is_none() && extension_options.is_none() {
         return Ok(carve_rs::to_markdown(source));
     }
     render(
         source,
         &extensions.unwrap_or_default(),
+        extension_options.as_ref(),
         Mode::Interactive,
         StaticRenderers::default(),
         &[],
@@ -481,20 +778,22 @@ fn to_markdown(
 
 /// Convert Carve source to plain text.
 #[pyfunction]
-#[pyo3(signature = (source, extensions = None, profile = None))]
+#[pyo3(signature = (source, extensions = None, profile = None, *, extension_options = None))]
 fn to_plain_text(
     source: &str,
     extensions: Option<Vec<String>>,
     profile: Option<&str>,
+    extension_options: Option<Bound<'_, PyDict>>,
 ) -> PyResult<String> {
     // The fast path must not swallow `profile`: returning here with a profile
     // set would accept the keyword and silently ignore it.
-    if is_core(&extensions) && profile.is_none() {
+    if is_core(&extensions) && profile.is_none() && extension_options.is_none() {
         return Ok(carve_rs::to_plain_text(source));
     }
     render(
         source,
         &extensions.unwrap_or_default(),
+        extension_options.as_ref(),
         Mode::Interactive,
         StaticRenderers::default(),
         &[],
@@ -507,20 +806,22 @@ fn to_plain_text(
 
 /// Convert Carve source to ANSI-colored terminal text.
 #[pyfunction]
-#[pyo3(signature = (source, extensions = None, profile = None))]
+#[pyo3(signature = (source, extensions = None, profile = None, *, extension_options = None))]
 fn to_ansi(
     source: &str,
     extensions: Option<Vec<String>>,
     profile: Option<&str>,
+    extension_options: Option<Bound<'_, PyDict>>,
 ) -> PyResult<String> {
     // The fast path must not swallow `profile`: returning here with a profile
     // set would accept the keyword and silently ignore it.
-    if is_core(&extensions) && profile.is_none() {
+    if is_core(&extensions) && profile.is_none() && extension_options.is_none() {
         return Ok(carve_rs::to_ansi(source));
     }
     render(
         source,
         &extensions.unwrap_or_default(),
+        extension_options.as_ref(),
         Mode::Interactive,
         StaticRenderers::default(),
         &[],
