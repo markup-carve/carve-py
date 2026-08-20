@@ -54,7 +54,19 @@ jobs:
           fi
 
   # ONE ENTRY PER WHEEL, and every entry is BUILT AND GATED ON ITS OWN
-  # ARCHITECTURE. That is the constraint the shape follows from: a wheel is
+  # ARCHITECTURE.
+  #
+  # The Intel macOS entry is `macos-15-intel` rather than `macos-13`, which was
+  # tried first and queued for 26 minutes with started=null while every other
+  # job in the run finished. GitHub's runner-images README no longer lists
+  # macos-13 at all; x64 macOS is macos-15-intel (and macos-26-intel) now.
+  #
+  # If that label ever stops being served too, the entry comes OUT rather than
+  # being cross-built: the corpus gate runs the engine inside the wheel, so a
+  # wheel with no machine to run it on is a wheel with no gate, and an Intel Mac
+  # falling back to the sdist is the smaller loss. tests/test_release_matrix.py
+  # holds the build matrix and the gate matrices to each other, so an entry
+  # cannot be added back without its gate. That is the constraint the shape follows from: a wheel is
   # only installable where it was built for, and the corpus gate below runs the
   # engine inside the wheel - so a cross-built artifact nobody can execute is an
   # artifact nobody can gate, and this repository does not publish those.
@@ -92,7 +104,7 @@ jobs:
           - name: macos-arm64
             runner: macos-latest
           - name: macos-x86_64
-            runner: macos-13
+            runner: macos-15-intel
           - name: windows-x86_64
             runner: windows-latest
     steps:
@@ -187,7 +199,7 @@ jobs:
           - name: macos-arm64
             runner: macos-latest
           - name: macos-x86_64
-            runner: macos-13
+            runner: macos-15-intel
           - name: windows-x86_64
             runner: windows-latest
     steps:

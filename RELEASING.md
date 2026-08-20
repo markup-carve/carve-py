@@ -56,10 +56,17 @@ Seven, each built and gated on its own architecture:
 | musllinux x86_64 | `ubuntu-latest`, gated in an Alpine container on it |
 | musllinux aarch64 | `ubuntu-24.04-arm`, gated in an Alpine container on it |
 | macOS arm64 | `macos-latest` |
-| macOS x86_64 | `macos-13` |
+| macOS x86_64 | `macos-15-intel` |
 | Windows amd64 | `windows-latest` |
 
 Every one of them is abi3, so a wheel covers Python 3.8 and later.
+
+Intel macOS is `macos-15-intel`, not `macos-13`: the latter queued for 26
+minutes without ever starting while the rest of the run finished, and GitHub's
+runner-images README no longer lists it. If that label stops being served too,
+the entry comes OUT rather than being cross-built - a wheel with no machine to
+run it on is a wheel with no gate, and an Intel Mac falling back to the sdist is
+the smaller loss.
 
 A wheel is only installable where it was built for, and the corpus gate RUNS the
 engine inside the wheel - so an artifact nobody can execute is an artifact

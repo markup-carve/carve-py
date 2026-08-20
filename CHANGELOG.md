@@ -14,7 +14,7 @@ therefore get an entry of their own.
   musllinux aarch64 and macOS x86_64. `pip install carve-lang` previously fell
   back to the sdist on Alpine, on ARM Linux and on an Intel Mac, which needs a
   Rust toolchain at install time and otherwise fails with a compiler error.
-  Every wheel is still built and gated on its own architecture.
+  Every wheel is built and gated on its own architecture.
 
 ## 0.1.1 - 2026-08-18
 
