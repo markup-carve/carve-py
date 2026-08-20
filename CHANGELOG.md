@@ -6,6 +6,16 @@ The engine is carve-rs, embedded at the revision recorded in `Cargo.lock`, so an
 engine bump can change rendering without a line of Python changing. Engine bumps
 therefore get an entry of their own.
 
+## [Unreleased]
+
+### Added
+
+- Wheels for four more platforms: manylinux aarch64, musllinux x86_64,
+  musllinux aarch64 and macOS x86_64. `pip install carve-lang` previously fell
+  back to the sdist on Alpine, on ARM Linux and on an Intel Mac, which needs a
+  Rust toolchain at install time and otherwise fails with a compiler error.
+  Every wheel is still built and gated on its own architecture.
+
 ## 0.1.1 - 2026-08-18
 
 ### Security
