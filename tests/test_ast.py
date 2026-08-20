@@ -77,3 +77,17 @@ def test_parse_json_returns_the_same_tree_as_parse():
     source = "# H\n\n- a\n- b\n"
 
     assert json.loads(carve.parse_json(source)) == carve.parse(source)
+
+
+def test_parse_carries_positions_unless_asked_otherwise():
+    """The AST entry points have always returned spans, and still must.
+
+    `positions` reaching the engine's own default here would silently strip
+    `pos` from every existing caller's tree - the kind of change that passes
+    every test that was adjusted to it.
+    """
+    source = "# Title\n"
+
+    assert "pos" in carve.parse(source)["children"][0]
+    assert "pos" in json.loads(carve.parse_json(source))["children"][0]
+    assert "pos" not in carve.parse(source, positions=False)["children"][0]

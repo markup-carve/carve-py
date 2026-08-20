@@ -19,6 +19,14 @@ def to_html(
     symbols: Optional[Dict[str, str]] = None,
     safe: bool = False,
     profile: Optional[str] = None,
+    *,
+    lowercase_heading_ids: Optional[bool] = None,
+    positions: Optional[bool] = None,
+    sections: Optional[bool] = None,
+    source_lines: Optional[bool] = None,
+    mention_url: Optional[str] = None,
+    tag_url: Optional[str] = None,
+    profile_base_host: Optional[str] = None,
 ) -> str:
     """Convert Carve source to HTML.
 
@@ -78,6 +86,14 @@ def to_html_with_extensions(
     symbols: Optional[Dict[str, str]] = None,
     safe: bool = False,
     profile: Optional[str] = None,
+    *,
+    lowercase_heading_ids: Optional[bool] = None,
+    positions: Optional[bool] = None,
+    sections: Optional[bool] = None,
+    source_lines: Optional[bool] = None,
+    mention_url: Optional[str] = None,
+    tag_url: Optional[str] = None,
+    profile_base_host: Optional[str] = None,
 ) -> str:
     """Convert Carve source to HTML with an explicit extension list.
 
@@ -149,7 +165,17 @@ def needs_review(source: str, current_version: Optional[str] = None) -> bool:
     """
     ...
 
-def parse(source: str) -> Dict[str, Any]:
+def parse(
+    source: str,
+    *,
+    lowercase_heading_ids: Optional[bool] = None,
+    positions: Optional[bool] = None,
+    sections: Optional[bool] = None,
+    source_lines: Optional[bool] = None,
+    mention_url: Optional[str] = None,
+    tag_url: Optional[str] = None,
+    profile_base_host: Optional[str] = None,
+) -> Dict[str, Any]:
     """Parse Carve source and return its AST as Python data.
 
     The PART 12 exchange shape - the same tree every Carve engine publishes, so
@@ -157,7 +183,8 @@ def parse(source: str) -> Dict[str, Any]:
     root carries exactly ``type``, ``children`` and ``srcByteLength``;
     frontmatter and footnote definitions are block nodes inside ``children``.
 
-    Every node except the root carries ``pos`` when the engine could place it:
+    Every node except the root carries ``pos`` when the engine could place it; pass
+    ``positions=False`` to leave the spans out:
     1-based lines and columns, 0-based offsets, ends exclusive, counted in
     Unicode **codepoints**. A node the engine could not place - reassembled
     text, a synthesized node - has no ``pos`` at all rather than an invented
@@ -167,7 +194,17 @@ def parse(source: str) -> Dict[str, Any]:
     """
     ...
 
-def parse_json(source: str) -> str:
+def parse_json(
+    source: str,
+    *,
+    lowercase_heading_ids: Optional[bool] = None,
+    positions: Optional[bool] = None,
+    sections: Optional[bool] = None,
+    source_lines: Optional[bool] = None,
+    mention_url: Optional[str] = None,
+    tag_url: Optional[str] = None,
+    profile_base_host: Optional[str] = None,
+) -> str:
     """The same tree as :func:`parse`, as a JSON string.
 
     For a caller that stores or forwards the bytes rather than walking the tree,
