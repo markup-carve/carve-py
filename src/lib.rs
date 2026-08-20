@@ -130,7 +130,9 @@ fn wrap_diagram(callable: Py<PyAny>) -> Box<dyn Fn(&str) -> String + 'static> {
 /// raising / non-string-returning callable), but the callable receives the TeX
 /// source and a `display` flag (`True` for block / display math, `False` for
 /// inline).
-fn wrap_math(callable: Py<PyAny>) -> Box<dyn Fn(&str, bool) -> String + 'static> {
+type MathRenderer = Box<dyn Fn(&str, bool) -> String + 'static>;
+
+fn wrap_math(callable: Py<PyAny>) -> MathRenderer {
     Box::new(move |tex: &str, display: bool| {
         Python::attach(|py| {
             match callable.call1(py, (tex, display)) {
@@ -221,6 +223,7 @@ fn render<F>(
     symbols: &[(String, String)],
     safe: bool,
     profile: Option<&str>,
+    engine_options: EngineOptions,
     f: F,
 ) -> PyResult<String>
 where
@@ -240,11 +243,50 @@ where
     if let Some(name) = profile {
         options = options.with_profile(parse_profile(name)?);
     }
+    options = engine_options.apply(options);
     // The fallible engine entry points, so a profile rejection raises instead of
     // returning an empty string. The infallible `to_*_with_options` wrappers are
     // `try_...().unwrap_or_default()`, which would make a rejected 20 KB comment
     // indistinguishable from a document that legitimately rendered to nothing.
     f(source, &options).map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
+#[derive(Default, PartialEq)]
+struct EngineOptions {
+    lowercase_heading_ids: Option<bool>,
+    positions: Option<bool>,
+    sections: Option<bool>,
+    source_lines: Option<bool>,
+    mention_url: Option<String>,
+    tag_url: Option<String>,
+    profile_base_host: Option<String>,
+}
+
+impl EngineOptions {
+    fn apply(self, mut options: Options<'_>) -> Options<'_> {
+        if let Some(value) = self.lowercase_heading_ids {
+            options = options.with_lowercase_heading_ids(value);
+        }
+        if let Some(value) = self.positions {
+            options = options.with_positions(value);
+        }
+        if let Some(value) = self.sections {
+            options = options.with_sections(value);
+        }
+        if let Some(value) = self.source_lines {
+            options = options.with_source_lines(value);
+        }
+        if let Some(value) = self.mention_url {
+            options = options.with_mention_url(value);
+        }
+        if let Some(value) = self.tag_url {
+            options = options.with_tag_url(value);
+        }
+        if let Some(value) = self.profile_base_host {
+            options = options.with_profile_base_host(value);
+        }
+        options
+    }
 }
 
 /// Map a profile name to a [`Profile`], or raise Python ValueError.
@@ -297,7 +339,8 @@ fn resolve_mode_and_renderers(
 /// deliberate: processor configuration is trusted. NEVER build a symbols map
 /// out of untrusted / user-supplied input.
 #[pyfunction]
-#[pyo3(signature = (source, extensions = None, mode = "interactive", renderers = None, symbols = None, safe = false, profile = None))]
+#[pyo3(signature = (source, extensions = None, mode = "interactive", renderers = None, symbols = None, safe = false, profile = None, *, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
+#[allow(clippy::too_many_arguments)]
 fn to_html(
     source: &str,
     extensions: Option<Vec<String>>,
@@ -306,7 +349,23 @@ fn to_html(
     symbols: Option<Bound<'_, PyDict>>,
     safe: bool,
     profile: Option<&str>,
+    lowercase_heading_ids: Option<bool>,
+    positions: Option<bool>,
+    sections: Option<bool>,
+    source_lines: Option<bool>,
+    mention_url: Option<String>,
+    tag_url: Option<String>,
+    profile_base_host: Option<String>,
 ) -> PyResult<String> {
+    let engine_options = EngineOptions {
+        lowercase_heading_ids,
+        positions,
+        sections,
+        source_lines,
+        mention_url,
+        tag_url,
+        profile_base_host,
+    };
     let (parsed_mode, static_renderers) = resolve_mode_and_renderers(mode, renderers.as_ref())?;
     let symbol_pairs = match symbols.as_ref() {
         Some(dict) => build_symbols(dict)?,
@@ -323,6 +382,7 @@ fn to_html(
         && static_renderers.math.is_none()
         && !safe
         && profile.is_none()
+        && engine_options == EngineOptions::default()
     {
         return Ok(carve_rs::to_html(source));
     }
@@ -334,6 +394,7 @@ fn to_html(
         &symbol_pairs,
         safe,
         profile,
+        engine_options,
         carve_rs::try_to_html_with_options,
     )
 }
@@ -343,7 +404,8 @@ fn to_html(
 /// Supports the same `mode` / `renderers` / `symbols` keywords as [`to_html`]
 /// (including the trusted-raw contract on symbol values).
 #[pyfunction]
-#[pyo3(signature = (source, extensions, mode = "interactive", renderers = None, symbols = None, safe = false, profile = None))]
+#[pyo3(signature = (source, extensions, mode = "interactive", renderers = None, symbols = None, safe = false, profile = None, *, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
+#[allow(clippy::too_many_arguments)]
 fn to_html_with_extensions(
     source: &str,
     extensions: Vec<String>,
@@ -352,6 +414,13 @@ fn to_html_with_extensions(
     symbols: Option<Bound<'_, PyDict>>,
     safe: bool,
     profile: Option<&str>,
+    lowercase_heading_ids: Option<bool>,
+    positions: Option<bool>,
+    sections: Option<bool>,
+    source_lines: Option<bool>,
+    mention_url: Option<String>,
+    tag_url: Option<String>,
+    profile_base_host: Option<String>,
 ) -> PyResult<String> {
     let (parsed_mode, static_renderers) = resolve_mode_and_renderers(mode, renderers.as_ref())?;
     let symbol_pairs = match symbols.as_ref() {
@@ -366,6 +435,15 @@ fn to_html_with_extensions(
         &symbol_pairs,
         safe,
         profile,
+        EngineOptions {
+            lowercase_heading_ids,
+            positions,
+            sections,
+            source_lines,
+            mention_url,
+            tag_url,
+            profile_base_host,
+        },
         carve_rs::try_to_html_with_options,
     )
 }
@@ -396,6 +474,7 @@ fn to_markdown(
         &[],
         false,
         profile,
+        EngineOptions::default(),
         carve_rs::try_to_markdown_with_options,
     )
 }
@@ -421,6 +500,7 @@ fn to_plain_text(
         &[],
         false,
         profile,
+        EngineOptions::default(),
         carve_rs::try_to_plain_text_with_options,
     )
 }
@@ -446,6 +526,7 @@ fn to_ansi(
         &[],
         false,
         profile,
+        EngineOptions::default(),
         carve_rs::try_to_ansi_with_options,
     )
 }
@@ -489,14 +570,33 @@ fn needs_review(source: &str, current_version: Option<&str>) -> bool {
 /// publishes the same bytes as the CLI, carve-rb and every other consumer of
 /// the same engine.
 ///
-/// Position tracking is ON here and nowhere else. PART 12 section 4 lets an
-/// engine gate tracking behind a parse option but requires the serialized form
-/// to carry it, and this is the only entry point that serializes; `to_html` and
-/// friends would pay for spans nobody reads.
+/// Positions are ON unless `positions=False` is passed. That is not the
+/// engine's default - it is what this function has always done, and the AST
+/// entry points are where a caller wants spans. Changing it would silently
+/// remove `pos` from every existing caller's tree.
 #[pyfunction]
-fn parse_json(source: &str) -> String {
-    let mut options = Options::new();
-    options.positions = true;
+#[pyo3(signature = (source, *, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
+#[allow(clippy::too_many_arguments)]
+fn parse_json(
+    source: &str,
+    lowercase_heading_ids: Option<bool>,
+    positions: Option<bool>,
+    sections: Option<bool>,
+    source_lines: Option<bool>,
+    mention_url: Option<String>,
+    tag_url: Option<String>,
+    profile_base_host: Option<String>,
+) -> String {
+    let options = EngineOptions {
+        lowercase_heading_ids,
+        positions: Some(positions.unwrap_or(true)),
+        sections,
+        source_lines,
+        mention_url,
+        tag_url,
+        profile_base_host,
+    }
+    .apply(Options::new());
     carve_rs::to_json(&carve_rs::parse_with_options(source, &options))
 }
 
@@ -507,9 +607,33 @@ fn parse_json(source: &str) -> String {
 /// caller that wants to store or forward the bytes without a round trip
 /// through Python objects.
 #[pyfunction]
-fn parse(py: Python<'_>, source: &str) -> PyResult<Py<PyAny>> {
+#[pyo3(signature = (source, *, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
+#[allow(clippy::too_many_arguments)]
+fn parse(
+    py: Python<'_>,
+    source: &str,
+    lowercase_heading_ids: Option<bool>,
+    positions: Option<bool>,
+    sections: Option<bool>,
+    source_lines: Option<bool>,
+    mention_url: Option<String>,
+    tag_url: Option<String>,
+    profile_base_host: Option<String>,
+) -> PyResult<Py<PyAny>> {
     let json = py.import("json")?;
-    let loaded = json.call_method1("loads", (parse_json(source),))?;
+    let loaded = json.call_method1(
+        "loads",
+        (parse_json(
+            source,
+            lowercase_heading_ids,
+            positions,
+            sections,
+            source_lines,
+            mention_url,
+            tag_url,
+            profile_base_host,
+        ),),
+    )?;
 
     Ok(loaded.unbind())
 }

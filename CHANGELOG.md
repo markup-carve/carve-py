@@ -10,6 +10,11 @@ therefore get an entry of their own.
 
 ### Added
 
+- Expose the engine-level `lowercase_heading_ids`, `positions`, `sections`,
+  `source_lines`, `mention_url`, `tag_url` and `profile_base_host` options as
+  keyword-only arguments on the HTML and AST entry points. An omitted argument
+  keeps what the function did before: the engine's default for `to_html`, and
+  positions ON for `parse` and `parse_json`, which have always returned spans.
 - Wheels for four more platforms: manylinux aarch64, musllinux x86_64,
   musllinux aarch64 and macOS x86_64. `pip install carve-lang` previously fell
   back to the sdist on Alpine, on ARM Linux and on an Intel Mac, which needs a

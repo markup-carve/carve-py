@@ -53,6 +53,10 @@ html = carve.to_html_with_extensions(source, ["autolink"])
 carve.to_html("Ship it :rocket:", symbols={"rocket": "🚀"})
 # -> '<p>Ship it 🚀</p>'
 
+# Engine-level options are keyword-only. Omitting one preserves its engine default.
+carve.to_html("# Mixed Case", lowercase_heading_ids=True)
+carve.to_html("Hello @ada", mention_url="https://example.com/{}")
+
 # Other renderers
 carve.to_markdown(source)
 carve.to_plain_text(source)
@@ -84,7 +88,7 @@ ast["type"]                        # "document"
 [c["type"] for c in ast["children"]]   # ["heading", "paragraph", "footnote"]
 ast["children"][0]["pos"]          # {"startLine": 1, "startColumn": 1, ...}
 
-carve.parse_json(source)           # the same tree, as a JSON string
+carve.parse_json(source)  # the same tree, as JSON bytes
 ```
 
 The root carries exactly `type`, `children` and `srcByteLength`; frontmatter and
@@ -97,6 +101,12 @@ one.
 
 The serialization is the engine's own, so this binding publishes byte-identical
 output to the `carve --json` CLI and to every other binding over carve-rs.
+
+The option-building entry points (`to_html`, `to_html_with_extensions`, `parse`,
+and `parse_json`) also accept keyword-only `lowercase_heading_ids`, `positions`,
+`sections`, `source_lines`, `mention_url`, `tag_url`, and `profile_base_host`.
+Boolean options accept `True` or `False`; URL/host options accept strings. When
+omitted, each option retains the engine's own default.
 
 ## Symbols
 
