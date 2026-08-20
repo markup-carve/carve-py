@@ -4,6 +4,20 @@ on:
   push:
     tags:
       - "v*"
+  # The release path builds seven wheels and gates each one, and none of that
+  # runs on an ordinary push - so a change to it used to be measured for the
+  # first time by the tag that spent it. These two triggers make the path
+  # testable: a pull request that touches it runs everything except the upload,
+  # which is guarded on a tag ref.
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+      - "scripts/release-corpus-gate.py"
+      - "scripts/pinned-spec-commit.py"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "pyproject.toml"
 
 jobs:
   # Runs before the three-OS wheel matrix, so a tag that disagrees with the
@@ -25,6 +39,7 @@ jobs:
       # tests/test_release_version.py checks the same pair, plus the changelog,
       # on every CI run; this is the last chance to catch it.
       - name: The tag matches the packaged version
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           tag="${GITHUB_REF_NAME#v}"
           version="$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)"
@@ -38,14 +53,60 @@ jobs:
             exit 1
           fi
 
+  # ONE ENTRY PER WHEEL, and every entry is BUILT AND GATED ON ITS OWN
+  # ARCHITECTURE.
+  #
+  # The Intel macOS entry is `macos-15-intel` rather than `macos-13`, which was
+  # tried first and queued for 26 minutes with started=null while every other
+  # job in the run finished. GitHub's runner-images README no longer lists
+  # macos-13 at all; x64 macOS is macos-15-intel (and macos-26-intel) now.
+  #
+  # If that label ever stops being served too, the entry comes OUT rather than
+  # being cross-built: the corpus gate runs the engine inside the wheel, so a
+  # wheel with no machine to run it on is a wheel with no gate, and an Intel Mac
+  # falling back to the sdist is the smaller loss. tests/test_release_matrix.py
+  # holds the build matrix and the gate matrices to each other, so an entry
+  # cannot be added back without its gate. That is the constraint the shape follows from: a wheel is
+  # only installable where it was built for, and the corpus gate below runs the
+  # engine inside the wheel - so a cross-built artifact nobody can execute is an
+  # artifact nobody can gate, and this repository does not publish those.
+  #
+  # What was missing, measured on PyPI against carve-lang 0.1.1: three wheels
+  # (manylinux x86_64, macOS arm64, Windows amd64). Everything else fell back to
+  # the sdist, which needs a Rust toolchain at install time - so `pip install
+  # carve-lang` failed on Alpine (the usual docs-CI base image), on ARM Linux
+  # (Graviton, ARM runners, Docker on Apple Silicon) and on an Intel Mac, in
+  # each case with a compiler error rather than a missing-wheel message.
+  # Zensical, the host this binding is most often installed beside, ships
+  # twelve.
   build-wheels:
-    name: Build wheels (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    name: Build wheel (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
     needs: [guard]
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - name: linux-x86_64
+            runner: ubuntu-latest
+            manylinux: auto
+          - name: linux-aarch64
+            runner: ubuntu-24.04-arm
+            manylinux: auto
+          - name: linux-musl-x86_64
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            manylinux: musllinux_1_2
+          - name: linux-musl-aarch64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            manylinux: musllinux_1_2
+          - name: macos-arm64
+            runner: macos-latest
+          - name: macos-x86_64
+            runner: macos-15-intel
+          - name: windows-x86_64
+            runner: windows-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -60,11 +121,12 @@ jobs:
           args: --release --features pyo3/extension-module --out dist
           # abi3-py38 feature is set in pyproject.toml via [tool.maturin].
           # One wheel covers Python 3.8+ per PEP 384.
-          manylinux: auto
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
 
       - uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{ matrix.os }}
+          name: wheels-${{ matrix.name }}
           path: dist/
 
   build-sdist:
@@ -123,13 +185,23 @@ jobs:
   # three of them are covered here, each on its own platform because a wheel is
   # only installable on the platform it was built for.
   corpus-gate:
-    name: Corpus through the built wheel (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    name: Corpus through the built wheel (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
     needs: [build-wheels]
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - name: linux-x86_64
+            runner: ubuntu-latest
+          - name: linux-aarch64
+            runner: ubuntu-24.04-arm
+          - name: macos-arm64
+            runner: macos-latest
+          - name: macos-x86_64
+            runner: macos-15-intel
+          - name: windows-x86_64
+            runner: windows-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -180,8 +252,8 @@ jobs:
 
       # Before the resolve step, not after the spec checkout: the resolver needs
       # tomllib (3.11+), and the Windows runner's preinstalled interpreter is
-      # older and is not reliably on PATH as `python3`. setup-python gives all
-      # three runners the same `python`.
+      # older and is not reliably on PATH as `python3`. setup-python gives every
+      # runner the same `python`.
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -207,7 +279,7 @@ jobs:
       - name: Download the wheel this release would publish
         uses: actions/download-artifact@v4
         with:
-          name: wheels-${{ matrix.os }}
+          name: wheels-${{ matrix.name }}
           path: dist
 
       - name: Run the spec corpus through it
@@ -246,6 +318,96 @@ jobs:
           # rather than through a rebuild.
           "$gate" -m pytest -q
 
+  # THE SAME GATE, FOR THE TWO WHEELS THAT CANNOT RUN ON THEIR OWN RUNNER.
+  #
+  # A musl wheel is built on a glibc runner - there is no Alpine runner - so it
+  # cannot be installed where it was built. It is gated in an Alpine container
+  # on that same runner, which gives it the libc it is for on the architecture
+  # it is for.
+  #
+  # Through `docker run` rather than a job-level `container:`, deliberately. The
+  # runner injects its own Node into a container to execute JavaScript actions,
+  # and that Node is built against glibc, so `actions/checkout` fails on Alpine
+  # before any wheel is touched. Here every action runs on the host and only the
+  # gate itself runs inside the container, over the same workspace.
+  corpus-gate-musl:
+    name: Corpus through the built wheel (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    needs: [build-wheels]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-musl-x86_64
+            runner: ubuntu-latest
+          - name: linux-musl-aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Same pinning rule as the native gate: the spec the ENGINE INSIDE THIS
+      # WHEEL was written against, not spec main, which no wheel can satisfy on
+      # the day it is built.
+      - name: Check out carve-rs
+        uses: actions/checkout@v4
+        with:
+          repository: markup-carve/carve-rs
+          path: carve-rs
+          fetch-depth: 0
+
+      - name: Resolve the spec commit the pinned engine pins
+        id: pin
+        shell: bash
+        run: |
+          spec="$(python scripts/pinned-spec-commit.py \
+            --engine carve-rs --manifest Cargo.toml --lock Cargo.lock)"
+          echo "spec=$spec" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the spec corpus that engine was written against
+        uses: actions/checkout@v4
+        with:
+          repository: markup-carve/carve
+          ref: ${{ steps.pin.outputs.spec }}
+          path: spec
+
+      - name: Download the wheel this release would publish
+        uses: actions/download-artifact@v4
+        with:
+          name: wheels-${{ matrix.name }}
+          path: dist
+
+      - name: Run the spec corpus through it, on musl
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          count="$(ls dist/*.whl | wc -l | tr -d ' ')"
+          if [ "$count" != "1" ]; then
+            echo "expected exactly one wheel in dist/, found ${count}:" >&2
+            ls -l dist/ >&2
+            exit 1
+          fi
+          wheel="$(ls dist/*.whl)"
+
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/work" -w /work \
+            -e "CARVE_SPEC_CORPUS=/work/spec/tests/corpus" \
+            -e "WHEEL=${wheel}" \
+            python:3.12-alpine sh -euc '
+              python -m venv .gate
+              .gate/bin/pip install --quiet --upgrade pip
+              .gate/bin/pip install --quiet pytest
+              .gate/bin/pip install --quiet --no-index --find-links dist \
+                --force-reinstall carve-lang
+              .gate/bin/python scripts/release-corpus-gate.py \
+                --wheel "$WHEEL" --corpus spec/tests/corpus
+              .gate/bin/python -m pytest -q
+            '
+
   publish:
     name: Publish to PyPI
     runs-on: ubuntu-latest
@@ -253,7 +415,12 @@ jobs:
     # the check inside this job would not: a step that runs before the upload in
     # the same job is one `continue-on-error`, one reordering or one `if:` away
     # from being advisory, and the upload would still have the artifact in hand.
-    needs: [build-wheels, build-sdist, corpus-gate]
+    needs: [build-wheels, build-sdist, corpus-gate, corpus-gate-musl]
+    # A pull request and a dispatch run everything above this job and stop here.
+    # The event matters as much as the ref: a dispatch can be aimed AT A TAG, in
+    # which case github.ref is a tag ref too, and a run meant to test the path
+    # would upload.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     permissions:
       id-token: write
     environment:

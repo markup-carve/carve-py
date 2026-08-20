@@ -45,6 +45,46 @@ compares the two manifests and the changelog against each other and against the
 installed module on every CI run, and the release workflow's `guard` job refuses
 a tag that disagrees with either manifest.
 
+## Which wheels a release builds
+
+Seven, each built and gated on its own architecture:
+
+| wheel | runner |
+| --- | --- |
+| manylinux x86_64 | `ubuntu-latest` |
+| manylinux aarch64 | `ubuntu-24.04-arm` |
+| musllinux x86_64 | `ubuntu-latest`, gated in an Alpine container on it |
+| musllinux aarch64 | `ubuntu-24.04-arm`, gated in an Alpine container on it |
+| macOS arm64 | `macos-latest` |
+| macOS x86_64 | `macos-15-intel` |
+| Windows amd64 | `windows-latest` |
+
+Every one of them is abi3, so a wheel covers Python 3.8 and later.
+
+Intel macOS is `macos-15-intel`, not `macos-13`: the latter queued for 26
+minutes without ever starting while the rest of the run finished, and GitHub's
+runner-images README no longer lists it. If that label stops being served too,
+the entry comes OUT rather than being cross-built - a wheel with no machine to
+run it on is a wheel with no gate, and an Intel Mac falling back to the sdist is
+the smaller loss.
+
+A wheel is only installable where it was built for, and the corpus gate RUNS the
+engine inside the wheel - so an artifact nobody can execute is an artifact
+nobody can gate. That is why there is no cross-built wheel here: a target we
+cannot gate is a target we do not ship. A musl wheel is the one case that needs
+help, because the runner that builds it is glibc; it is gated in an Alpine
+container on that same runner, entered with `docker run` rather than a
+job-level `container:` - the runner injects a glibc-built Node into a container
+to execute JavaScript actions, so `actions/checkout` would fail on Alpine before
+any wheel was touched.
+
+## Testing the release path without spending a tag
+
+The path used to run for the first time on the tag that spent it. It now also
+runs on `workflow_dispatch`, and on a pull request that touches the workflow,
+either gate script, the manifests or the lockfile. Both run everything except
+the upload, which is guarded on a tag ref.
+
 ## What the wheel embeds
 
 The engine is carve-rs, built from the revision recorded in `Cargo.lock`. That
