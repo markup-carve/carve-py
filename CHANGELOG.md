@@ -18,6 +18,10 @@ therefore get an entry of their own.
   keyword-only arguments on the HTML and AST entry points. An omitted argument
   keeps what the function did before: the engine's default for `to_html`, and
   positions ON for `parse` and `parse_json`, which have always returned spans.
+- Extend those same seven engine options to `to_markdown`, `to_plain_text` and
+  `to_ansi`, which took none of them. `lowercase_heading_ids` changes what all
+  three emit, because their renderers resolve `</#id>` crossrefs through the
+  same heading index the HTML renderer uses (#53).
 - Wheels for four more platforms: manylinux aarch64, musllinux x86_64,
   musllinux aarch64 and macOS x86_64. `pip install carve-lang` previously fell
   back to the sdist on Alpine, on ARM Linux and on an Intel Mac, which needs a

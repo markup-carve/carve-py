@@ -67,10 +67,10 @@ carve.to_html("Ship it :rocket:", symbols={"rocket": "🚀"})
 carve.to_html("# Mixed Case", lowercase_heading_ids=True)
 carve.to_html("Hello @ada", mention_url="https://example.com/{}")
 
-# Other renderers
+# Other renderers. They take the same engine options and `extension_options`.
 carve.to_markdown(source)
 carve.to_plain_text(source)
-carve.to_ansi(source)
+carve.to_ansi(source, lowercase_heading_ids=True)
 
 # Discover supported extension names
 carve.extensions()
@@ -115,11 +115,18 @@ one.
 The serialization is the engine's own, so this binding publishes byte-identical
 output to the `carve --json` CLI and to every other binding over carve-rs.
 
-The option-building entry points (`to_html`, `to_html_with_extensions`, `parse`,
-and `parse_json`) also accept keyword-only `lowercase_heading_ids`, `positions`,
-`sections`, `source_lines`, `mention_url`, `tag_url`, and `profile_base_host`.
-Boolean options accept `True` or `False`; URL/host options accept strings. When
-omitted, each option retains the engine's own default.
+Every rendering entry point (`to_html`, `to_html_with_extensions`, `to_markdown`,
+`to_plain_text`, `to_ansi`, `parse` and `parse_json`) also accepts keyword-only
+`lowercase_heading_ids`, `positions`, `sections`, `source_lines`, `mention_url`,
+`tag_url`, and `profile_base_host`. Boolean options accept `True` or `False`;
+URL/host options accept strings. When omitted, each option retains the engine's
+own default.
+
+The keyword set is the same on every target so a host does not have to remember
+which target takes which. Most of these options describe HTML markup, so on
+`to_markdown` / `to_plain_text` / `to_ansi` they have nothing to change;
+`lowercase_heading_ids` does change those three, because all four renderers
+resolve `</#id>` crossrefs through the same heading index.
 
 ## Symbols
 
