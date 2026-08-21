@@ -776,10 +776,11 @@ fn to_markdown(
     };
     // The fast path must not swallow `profile` or an engine option: returning
     // here with either set would accept the keyword and silently ignore it.
-    // `lowercase_heading_ids` and `profile_base_host` both reach this target -
-    // the first through the renderer's crossref index, the second through the
-    // shared profile filter - so the shortcut has to be off the table whenever
-    // any of them is given, not only for the two that bite today.
+    // `lowercase_heading_ids` is the one that changes this target's output
+    // today, through the renderer's crossref index. The guard is on the whole
+    // struct rather than that one field, because the alternative is a list to
+    // keep in step with the engine, and the day a renderer starts reading one
+    // more option the shortcut would go back to eating it in silence.
     if is_core(&extensions)
         && profile.is_none()
         && extension_options.is_none()
@@ -829,10 +830,11 @@ fn to_plain_text(
     };
     // The fast path must not swallow `profile` or an engine option: returning
     // here with either set would accept the keyword and silently ignore it.
-    // `lowercase_heading_ids` and `profile_base_host` both reach this target -
-    // the first through the renderer's crossref index, the second through the
-    // shared profile filter - so the shortcut has to be off the table whenever
-    // any of them is given, not only for the two that bite today.
+    // `lowercase_heading_ids` is the one that changes this target's output
+    // today, through the renderer's crossref index. The guard is on the whole
+    // struct rather than that one field, because the alternative is a list to
+    // keep in step with the engine, and the day a renderer starts reading one
+    // more option the shortcut would go back to eating it in silence.
     if is_core(&extensions)
         && profile.is_none()
         && extension_options.is_none()
@@ -882,10 +884,11 @@ fn to_ansi(
     };
     // The fast path must not swallow `profile` or an engine option: returning
     // here with either set would accept the keyword and silently ignore it.
-    // `lowercase_heading_ids` and `profile_base_host` both reach this target -
-    // the first through the renderer's crossref index, the second through the
-    // shared profile filter - so the shortcut has to be off the table whenever
-    // any of them is given, not only for the two that bite today.
+    // `lowercase_heading_ids` is the one that changes this target's output
+    // today, through the renderer's crossref index. The guard is on the whole
+    // struct rather than that one field, because the alternative is a list to
+    // keep in step with the engine, and the day a renderer starts reading one
+    // more option the shortcut would go back to eating it in silence.
     if is_core(&extensions)
         && profile.is_none()
         && extension_options.is_none()
