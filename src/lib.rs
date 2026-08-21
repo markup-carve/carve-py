@@ -750,16 +750,41 @@ fn is_core(extensions: &Option<Vec<String>>) -> bool {
 
 /// Convert Carve source to Markdown.
 #[pyfunction]
-#[pyo3(signature = (source, extensions = None, profile = None, *, extension_options = None))]
+#[pyo3(signature = (source, extensions = None, profile = None, *, extension_options = None, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
+#[allow(clippy::too_many_arguments)]
 fn to_markdown(
     source: &str,
     extensions: Option<Vec<String>>,
     profile: Option<&str>,
     extension_options: Option<Bound<'_, PyDict>>,
+    lowercase_heading_ids: Option<bool>,
+    positions: Option<bool>,
+    sections: Option<bool>,
+    source_lines: Option<bool>,
+    mention_url: Option<String>,
+    tag_url: Option<String>,
+    profile_base_host: Option<String>,
 ) -> PyResult<String> {
-    // The fast path must not swallow `profile`: returning here with a profile
-    // set would accept the keyword and silently ignore it.
-    if is_core(&extensions) && profile.is_none() && extension_options.is_none() {
+    let engine_options = EngineOptions {
+        lowercase_heading_ids,
+        positions,
+        sections,
+        source_lines,
+        mention_url,
+        tag_url,
+        profile_base_host,
+    };
+    // The fast path must not swallow `profile` or an engine option: returning
+    // here with either set would accept the keyword and silently ignore it.
+    // `lowercase_heading_ids` and `profile_base_host` both reach this target -
+    // the first through the renderer's crossref index, the second through the
+    // shared profile filter - so the shortcut has to be off the table whenever
+    // any of them is given, not only for the two that bite today.
+    if is_core(&extensions)
+        && profile.is_none()
+        && extension_options.is_none()
+        && engine_options == EngineOptions::default()
+    {
         return Ok(carve_rs::to_markdown(source));
     }
     render(
@@ -771,23 +796,48 @@ fn to_markdown(
         &[],
         false,
         profile,
-        EngineOptions::default(),
+        engine_options,
         carve_rs::try_to_markdown_with_options,
     )
 }
 
 /// Convert Carve source to plain text.
 #[pyfunction]
-#[pyo3(signature = (source, extensions = None, profile = None, *, extension_options = None))]
+#[pyo3(signature = (source, extensions = None, profile = None, *, extension_options = None, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
+#[allow(clippy::too_many_arguments)]
 fn to_plain_text(
     source: &str,
     extensions: Option<Vec<String>>,
     profile: Option<&str>,
     extension_options: Option<Bound<'_, PyDict>>,
+    lowercase_heading_ids: Option<bool>,
+    positions: Option<bool>,
+    sections: Option<bool>,
+    source_lines: Option<bool>,
+    mention_url: Option<String>,
+    tag_url: Option<String>,
+    profile_base_host: Option<String>,
 ) -> PyResult<String> {
-    // The fast path must not swallow `profile`: returning here with a profile
-    // set would accept the keyword and silently ignore it.
-    if is_core(&extensions) && profile.is_none() && extension_options.is_none() {
+    let engine_options = EngineOptions {
+        lowercase_heading_ids,
+        positions,
+        sections,
+        source_lines,
+        mention_url,
+        tag_url,
+        profile_base_host,
+    };
+    // The fast path must not swallow `profile` or an engine option: returning
+    // here with either set would accept the keyword and silently ignore it.
+    // `lowercase_heading_ids` and `profile_base_host` both reach this target -
+    // the first through the renderer's crossref index, the second through the
+    // shared profile filter - so the shortcut has to be off the table whenever
+    // any of them is given, not only for the two that bite today.
+    if is_core(&extensions)
+        && profile.is_none()
+        && extension_options.is_none()
+        && engine_options == EngineOptions::default()
+    {
         return Ok(carve_rs::to_plain_text(source));
     }
     render(
@@ -799,23 +849,48 @@ fn to_plain_text(
         &[],
         false,
         profile,
-        EngineOptions::default(),
+        engine_options,
         carve_rs::try_to_plain_text_with_options,
     )
 }
 
 /// Convert Carve source to ANSI-colored terminal text.
 #[pyfunction]
-#[pyo3(signature = (source, extensions = None, profile = None, *, extension_options = None))]
+#[pyo3(signature = (source, extensions = None, profile = None, *, extension_options = None, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
+#[allow(clippy::too_many_arguments)]
 fn to_ansi(
     source: &str,
     extensions: Option<Vec<String>>,
     profile: Option<&str>,
     extension_options: Option<Bound<'_, PyDict>>,
+    lowercase_heading_ids: Option<bool>,
+    positions: Option<bool>,
+    sections: Option<bool>,
+    source_lines: Option<bool>,
+    mention_url: Option<String>,
+    tag_url: Option<String>,
+    profile_base_host: Option<String>,
 ) -> PyResult<String> {
-    // The fast path must not swallow `profile`: returning here with a profile
-    // set would accept the keyword and silently ignore it.
-    if is_core(&extensions) && profile.is_none() && extension_options.is_none() {
+    let engine_options = EngineOptions {
+        lowercase_heading_ids,
+        positions,
+        sections,
+        source_lines,
+        mention_url,
+        tag_url,
+        profile_base_host,
+    };
+    // The fast path must not swallow `profile` or an engine option: returning
+    // here with either set would accept the keyword and silently ignore it.
+    // `lowercase_heading_ids` and `profile_base_host` both reach this target -
+    // the first through the renderer's crossref index, the second through the
+    // shared profile filter - so the shortcut has to be off the table whenever
+    // any of them is given, not only for the two that bite today.
+    if is_core(&extensions)
+        && profile.is_none()
+        && extension_options.is_none()
+        && engine_options == EngineOptions::default()
+    {
         return Ok(carve_rs::to_ansi(source));
     }
     render(
@@ -827,7 +902,7 @@ fn to_ansi(
         &[],
         false,
         profile,
-        EngineOptions::default(),
+        engine_options,
         carve_rs::try_to_ansi_with_options,
     )
 }

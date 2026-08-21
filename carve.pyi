@@ -112,12 +112,24 @@ def to_markdown(
     profile: Optional[str] = None,
     *,
     extension_options: Optional[ExtensionOptions] = None,
+    lowercase_heading_ids: Optional[bool] = None,
+    positions: Optional[bool] = None,
+    sections: Optional[bool] = None,
+    source_lines: Optional[bool] = None,
+    mention_url: Optional[str] = None,
+    tag_url: Optional[str] = None,
+    profile_base_host: Optional[str] = None,
 ) -> str:
     """Convert Carve source to Markdown (inherently static; no ``mode``).
 
     ``profile`` behaves as in :func:`to_html`. There is no ``safe`` keyword:
     this target escapes raw HTML unconditionally, so it can never emit live
     markup and has nothing to switch off.
+
+    The engine keywords of :func:`to_html` are accepted here too. Most of them
+    describe HTML markup and have no effect on this target;
+    ``lowercase_heading_ids`` does, because the renderer resolves ``</#id>``
+    crossrefs through the same heading index the HTML renderer uses.
     """
     ...
 
@@ -127,11 +139,23 @@ def to_plain_text(
     profile: Optional[str] = None,
     *,
     extension_options: Optional[ExtensionOptions] = None,
+    lowercase_heading_ids: Optional[bool] = None,
+    positions: Optional[bool] = None,
+    sections: Optional[bool] = None,
+    source_lines: Optional[bool] = None,
+    mention_url: Optional[str] = None,
+    tag_url: Optional[str] = None,
+    profile_base_host: Optional[str] = None,
 ) -> str:
     """Convert Carve source to plain text (inherently static; no ``mode``).
 
     ``profile`` behaves as in :func:`to_html`; there is no ``safe`` keyword (see
     :func:`to_markdown`).
+
+    The engine keywords of :func:`to_html` are accepted here too. Most of them
+    describe HTML markup and have no effect on this target;
+    ``lowercase_heading_ids`` does, because the renderer resolves ``</#id>``
+    crossrefs through the same heading index the HTML renderer uses.
     """
     ...
 
@@ -141,11 +165,23 @@ def to_ansi(
     profile: Optional[str] = None,
     *,
     extension_options: Optional[ExtensionOptions] = None,
+    lowercase_heading_ids: Optional[bool] = None,
+    positions: Optional[bool] = None,
+    sections: Optional[bool] = None,
+    source_lines: Optional[bool] = None,
+    mention_url: Optional[str] = None,
+    tag_url: Optional[str] = None,
+    profile_base_host: Optional[str] = None,
 ) -> str:
     """Convert Carve source to ANSI-colored text (inherently static; no ``mode``).
 
     ``profile`` behaves as in :func:`to_html`; there is no ``safe`` keyword (see
     :func:`to_markdown`).
+
+    The engine keywords of :func:`to_html` are accepted here too. Most of them
+    describe HTML markup and have no effect on this target;
+    ``lowercase_heading_ids`` does, because the renderer resolves ``</#id>``
+    crossrefs through the same heading index the HTML renderer uses.
     """
     ...
 
