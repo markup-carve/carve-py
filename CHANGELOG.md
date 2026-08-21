@@ -10,23 +10,23 @@ therefore get an entry of their own.
 
 ### Added
 
-- Add keyword-only `extension_options` mappings to every rendering function
-  that accepts `extensions`, exposing all thirteen configurable engine
-  extensions with strict extension-name, option-key, type and enum validation.
-- Expose the engine-level `lowercase_heading_ids`, `positions`, `sections`,
-  `source_lines`, `mention_url`, `tag_url` and `profile_base_host` options as
+- Keyword-only `extension_options` on every rendering function that accepts
+  `extensions`, exposing all thirteen configurable engine extensions with
+  strict extension-name, option-key, type and enum validation (#55).
+- The engine's own `lowercase_heading_ids`, `positions`, `sections`,
+  `source_lines`, `mention_url`, `tag_url` and `profile_base_host` as
   keyword-only arguments on the HTML and AST entry points. An omitted argument
   keeps what the function did before: the engine's default for `to_html`, and
-  positions ON for `parse` and `parse_json`, which have always returned spans.
-- Extend those same seven engine options to `to_markdown`, `to_plain_text` and
-  `to_ansi`, which took none of them. `lowercase_heading_ids` changes what all
-  three emit, because their renderers resolve `</#id>` crossrefs through the
-  same heading index the HTML renderer uses (#53).
-- Wheels for four more platforms: manylinux aarch64, musllinux x86_64,
-  musllinux aarch64 and macOS x86_64. `pip install carve-lang` previously fell
-  back to the sdist on Alpine, on ARM Linux and on an Intel Mac, which needs a
-  Rust toolchain at install time and otherwise fails with a compiler error.
-  Every wheel is built and gated on its own architecture.
+  positions ON for `parse` and `parse_json`, which have always returned spans
+  (#54).
+- Those same seven options on `to_markdown`, `to_plain_text` and `to_ansi`,
+  which hardcoded the engine's defaults and so reached none of them.
+  `lowercase_heading_ids` changes what all three emit, through the heading
+  crossref index their renderers share with the HTML one (#53, #56).
+- Wheels for manylinux aarch64, musllinux x86_64, musllinux aarch64 and macOS
+  x86_64, each built and gated on its own architecture. `pip install
+  carve-lang` previously fell back to the sdist on Alpine, on ARM Linux and on
+  an Intel Mac, which needs a Rust toolchain at install time (#52).
 
 ## 0.1.1 - 2026-08-18
 
