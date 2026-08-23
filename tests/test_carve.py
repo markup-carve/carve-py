@@ -158,6 +158,10 @@ def test_to_ansi():
     assert "Hi" in out
 
 
+def test_to_carve():
+    assert carve.to_carve("# Hi\n\n\nBody") == "# Hi\n\nBody\n"
+
+
 # --- Engine language surface ---------------------------------------------
 #
 # These exercise the carve-rs engine through the binding's public API, so a

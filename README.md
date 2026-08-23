@@ -71,6 +71,7 @@ carve.to_html("Hello @ada", mention_url="https://example.com/{}")
 carve.to_markdown(source)
 carve.to_plain_text(source)
 carve.to_ansi(source, lowercase_heading_ids=True)
+carve.to_carve(source)
 
 # Discover supported extension names
 carve.extensions()

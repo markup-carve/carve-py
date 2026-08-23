@@ -910,6 +910,12 @@ fn to_ansi(
     )
 }
 
+/// Format Carve source into the engine's canonical Carve spelling.
+#[pyfunction]
+fn to_carve(source: &str) -> String {
+    carve_rs::to_carve(source)
+}
+
 /// Read a document's provenance marker, as written by `carve fmt --stamp`.
 ///
 /// Returns a dict `{"version": ..., "generated_by": ...}`, or None when the
@@ -1104,6 +1110,7 @@ fn carve(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(to_markdown, m)?)?;
     m.add_function(wrap_pyfunction!(to_plain_text, m)?)?;
     m.add_function(wrap_pyfunction!(to_ansi, m)?)?;
+    m.add_function(wrap_pyfunction!(to_carve, m)?)?;
     m.add_function(wrap_pyfunction!(extensions, m)?)?;
     m.add_function(wrap_pyfunction!(read_stamp, m)?)?;
     m.add_function(wrap_pyfunction!(needs_review, m)?)?;
