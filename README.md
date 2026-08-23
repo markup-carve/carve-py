@@ -87,6 +87,58 @@ it. They are kebab-case (`math-block`, `table-of-contents`); the snake_case
 spellings this binding has always taken (`math_block`) reach the same
 extensions, so nothing written against the older names has to change.
 
+## Linting
+
+`carve.lint` reports constructs that parse and render, but not the way the
+author meant. The defect class it catches is the silent one: the document
+parses, the renderer emits something, and what the author wrote never reaches
+the page.
+
+```python
+import carve
+
+for warning in carve.lint("{#orphan .cls}\n\n"):
+    print(warning["line"], warning["rule"], warning["message"])
+```
+
+```
+1 unattached-block-attribute This block attribute reaches no block: ...
+```
+
+That one is the clearest case - `{#id .cls}` above a blank line attaches to
+nothing, so the id and the class vanish and nothing anywhere says so.
+
+Each warning is a dict:
+
+| Key | What |
+| --- | --- |
+| `line`, `column` | 1-based, for reporting |
+| `rule` | a stable id, shared with carve-js and carve-php - the same trigger reports the same id in every engine |
+| `message` | what degrades, in prose |
+| `start`, `end` | codepoint offsets into the source, 0-based, end exclusive |
+
+`start` and `end` slice the offending text directly:
+
+```python
+source = "{#orphan .cls}\n\n"
+warning = carve.lint(source)[0]
+assert source[warning["start"]:warning["end"]] == "{#orphan .cls}"
+```
+
+**They are CODEPOINT offsets, not the byte offsets the Rust API reports.** That
+conversion is deliberate and tested: a Rust caller slices `&str` with bytes, but
+Python slices by codepoint, so passing them through unconverted mis-slices every
+document carrying one non-ASCII character before a warning. The unit follows the
+host language - carve-js converts the same positions to UTF-16 for the same
+reason.
+
+`extensions` is the only option accepted, because it is the only one the
+engine's linter reads:
+
+```python
+carve.lint(source, extensions=["details"])
+```
+
 ## The parsed AST
 
 `carve.parse()` returns the document as Python data - the [PART 12 exchange

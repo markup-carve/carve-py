@@ -10,6 +10,18 @@ therefore get an entry of their own.
 
 ### Added
 
+- **`carve.lint`** reports constructs that parse and render but not the way the
+  author meant - an unattached `{#id .cls}` above a blank line attaches to
+  nothing, so the id and the class vanish silently. The engine has always been
+  able to report these; no Python caller could reach the report. Each warning
+  carries `line`, `column`, `rule`, `message`, `start` and `end`, and
+  `source[start:end]` is the offending text.
+
+  The offsets are CODEPOINTS, converted from the byte offsets the Rust API
+  reports. Passing those through unconverted mis-slices any document with a
+  non-ASCII character before a warning; a test pins it with a prefix that makes
+  the two units differ by ten.
+
 - Keyword-only `extension_options` on every rendering function that accepts
   `extensions`, exposing all thirteen configurable engine extensions with
   strict extension-name, option-key, type and enum validation (#55).

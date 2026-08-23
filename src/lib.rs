@@ -1022,6 +1022,75 @@ fn parse(
 /// Taken from the engine's registry, so a new extension in carve-rs is
 /// reachable from Python as soon as the pin moves - no list here to update, and
 /// none to forget.
+/// Report constructs that parse and render, but not the way the author meant.
+///
+/// The defect class this catches is the silent one: the document parses, the
+/// renderer emits something, and what the author wrote never reaches the page.
+/// An unattached block attribute is the clearest case - `{#id .cls}` above a
+/// blank line attaches to nothing, so the id and the class simply vanish, and
+/// nothing anywhere says so. The engine has always been able to report these;
+/// no Python caller could reach the report.
+///
+/// Returns a list of dicts, one per warning, each carrying `line`, `column`,
+/// `rule`, `message`, `start` and `end`.
+///
+/// `start` and `end` are CODEPOINT offsets, not the byte offsets the Rust API
+/// reports. That conversion is the whole reason this is not a two-line
+/// wrapper: `LintWarning` documents its offsets as bytes deliberately, because
+/// a Rust caller slices `&str` with them, and it notes that the unit follows
+/// the host language - carve-js converts to UTF-16 for exactly the same
+/// reason. Handing a byte offset to Python would silently mis-slice every
+/// document containing one non-ASCII character before a warning, which is the
+/// class of bug that only shows up in someone else's language.
+///
+/// Only `extensions` is accepted, because it is the only option the engine's
+/// linter reads.
+#[pyfunction]
+#[pyo3(signature = (source, extensions = None))]
+fn lint(
+    py: Python<'_>,
+    source: &str,
+    extensions: Option<Vec<String>>,
+) -> PyResult<Vec<Py<PyDict>>> {
+    let names = extensions.unwrap_or_default();
+    let owned = boxed_extensions(&names, None)?;
+    let mut options = Options::new();
+    for ext in &owned {
+        options = options.with_extension(ext.as_ref());
+    }
+    let warnings = carve_rs::lint_carve_with_options(source, &options);
+
+    // One pass over the source builds a byte -> codepoint table, so a document
+    // with many warnings does not re-scan it once per warning. Every byte
+    // WITHIN a character maps to that character's index, which means a byte
+    // offset landing mid-character (it should not, but a wrong answer here
+    // must not be a panic) resolves to the character containing it. The final
+    // slot is the total, so an end offset at EOF resolves.
+    let mut codepoint_at: Vec<usize> = Vec::with_capacity(source.len() + 1);
+    let mut count = 0usize;
+    for (_, ch) in source.char_indices() {
+        for _ in 0..ch.len_utf8() {
+            codepoint_at.push(count);
+        }
+        count += 1;
+    }
+    codepoint_at.push(count);
+    let to_codepoint = |byte: usize| -> usize { codepoint_at.get(byte).copied().unwrap_or(count) };
+
+    let mut out = Vec::with_capacity(warnings.len());
+    for warning in warnings {
+        let dict = PyDict::new(py);
+        dict.set_item("line", warning.line)?;
+        dict.set_item("column", warning.column)?;
+        dict.set_item("rule", warning.rule)?;
+        dict.set_item("message", warning.message)?;
+        dict.set_item("start", to_codepoint(warning.start))?;
+        dict.set_item("end", to_codepoint(warning.end))?;
+        out.push(dict.unbind());
+    }
+    Ok(out)
+}
+
 #[pyfunction]
 fn extensions() -> Vec<String> {
     supported()
@@ -1040,5 +1109,6 @@ fn carve(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(needs_review, m)?)?;
     m.add_function(wrap_pyfunction!(parse, m)?)?;
     m.add_function(wrap_pyfunction!(parse_json, m)?)?;
+    m.add_function(wrap_pyfunction!(lint, m)?)?;
     Ok(())
 }

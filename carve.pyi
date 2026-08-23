@@ -257,6 +257,40 @@ def parse_json(
     """
     ...
 
+def lint(
+    source: str,
+    extensions: Optional[List[str]] = None,
+) -> List[Dict[str, Any]]:
+    """Report constructs that parse and render, but not the way the author meant.
+
+    The defect class this catches is the silent one: the document parses, the
+    renderer emits something, and what the author wrote never reaches the page.
+    An unattached block attribute is the clearest case - ``{#id .cls}`` above a
+    blank line attaches to nothing, so the id and the class simply vanish, and
+    nothing says so.
+
+    Each warning is a dict with:
+
+    ``line``, ``column``
+        1-based, for reporting.
+    ``rule``
+        A stable id such as ``"unattached-block-attribute"``, shared with
+        carve-js and carve-php: the same trigger reports the same id in every
+        engine.
+    ``message``
+        What degrades, in prose.
+    ``start``, ``end``
+        CODEPOINT offsets into ``source``, 0-based, end exclusive - so
+        ``source[warning["start"]:warning["end"]]`` is the offending text.
+        The Rust API reports these as BYTE offsets, which would mis-slice
+        every document carrying one non-ASCII character before a warning;
+        the unit follows the host language, and Python's is the codepoint.
+
+    Only ``extensions`` is accepted, because it is the only option the
+    engine's linter reads.
+    """
+    ...
+
 def extensions() -> List[str]:
     """Return the list of supported extension names."""
     ...
