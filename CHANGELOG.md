@@ -11,7 +11,8 @@ therefore get an entry of their own.
 ### Added
 
 - `carve.to_carve(source)` exposes the canonical Carve target alongside HTML,
-  Markdown, plain text, ANSI, and the AST.
+  Markdown, plain text, ANSI and the AST, so every core render target the
+  engine understands is reachable from Python (#59).
 
 - **`carve.lint`** reports constructs that parse and render but not the way the
   author meant - an unattached `{#id .cls}` above a blank line attaches to
