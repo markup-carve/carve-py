@@ -10,6 +10,8 @@ therefore get an entry of their own.
 
 ### Added
 
+- `carve.from_html()` and `carve.from_markdown()` expose migration with a
+  consistent `{value, report}` result.
 - `carve.to_carve(source)` exposes the canonical Carve target alongside HTML,
   Markdown, plain text, ANSI and the AST, so every core render target the
   engine understands is reachable from Python (#59).

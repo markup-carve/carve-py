@@ -162,6 +162,18 @@ def test_to_carve():
     assert carve.to_carve("# Hi\n\n\nBody") == "# Hi\n\nBody\n"
 
 
+def test_import_html_and_markdown_with_reports():
+    html = carve.from_html('<p>Hello <strong>world</strong></p>')
+    assert html["value"] == "Hello *world*\n"
+    assert html["report"] == {"mode": "safe", "adapter": "generic", "diagnostics": []}
+
+    markdown = carve.from_markdown("*em* and **strong**")
+    assert markdown == {
+        "value": "/em/ and *strong*\n",
+        "report": {"source_format": "markdown", "diagnostics": []},
+    }
+
+
 # --- Engine language surface ---------------------------------------------
 #
 # These exercise the carve-rs engine through the binding's public API, so a
