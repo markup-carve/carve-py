@@ -4,6 +4,10 @@ from typing import Any, Callable, Dict, List, Optional, Union
 
 __version__: str
 
+def to_carve(source: str) -> str:
+    """Format Carve source into canonical Carve."""
+    ...
+
 # A static-render callable. Diagram renderers (mermaid, chart, plantuml,
 # graphviz, d2, wavedrom, vega-lite, abc), keyed by fence css class, take the
 # construct source and return HTML: ``(str) -> str``. The math renderer takes

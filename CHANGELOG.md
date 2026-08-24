@@ -10,6 +10,9 @@ therefore get an entry of their own.
 
 ### Added
 
+- `carve.to_carve(source)` exposes the canonical Carve target alongside HTML,
+  Markdown, plain text, ANSI, and the AST.
+
 - **`carve.lint`** reports constructs that parse and render but not the way the
   author meant - an unattached `{#id .cls}` above a blank line attaches to
   nothing, so the id and the class vanish silently. The engine has always been
