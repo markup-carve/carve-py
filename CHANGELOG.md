@@ -15,7 +15,7 @@ therefore get an entry of their own.
   nothing, so the id and the class vanish silently. The engine has always been
   able to report these; no Python caller could reach the report. Each warning
   carries `line`, `column`, `rule`, `message`, `start` and `end`, and
-  `source[start:end]` is the offending text.
+  `source[start:end]` is the offending text (#58).
 
   The offsets are CODEPOINTS, converted from the byte offsets the Rust API
   reports. Passing those through unconverted mis-slices any document with a
