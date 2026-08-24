@@ -1,11 +1,35 @@
 """Type stubs for the `carve` native binding (PyO3 over carve-rs)."""
 
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
 
 __version__: str
 
 def to_carve(source: str) -> str:
     """Format Carve source into canonical Carve."""
+    ...
+
+class MigrationDiagnostic(TypedDict, total=False):
+    code: str
+    message: str
+    severity: str
+    path: str
+
+class MigrationReport(TypedDict, total=False):
+    mode: str
+    adapter: str
+    source_format: str
+    diagnostics: List[MigrationDiagnostic]
+
+class MigrationResult(TypedDict):
+    value: str
+    report: MigrationReport
+
+def from_html(source: str, mode: str = "safe") -> MigrationResult:
+    """Import HTML into canonical Carve and return its loss report."""
+    ...
+
+def from_markdown(source: str) -> MigrationResult:
+    """Import Markdown into canonical Carve and return its loss report."""
     ...
 
 # A static-render callable. Diagram renderers (mermaid, chart, plantuml,

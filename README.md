@@ -73,6 +73,10 @@ carve.to_plain_text(source)
 carve.to_ansi(source, lowercase_heading_ids=True)
 carve.to_carve(source)
 
+# Migration returns canonical Carve plus a machine-readable loss report.
+carve.from_html('<p>Hello <strong>world</strong></p>')
+carve.from_markdown('*em* and **strong**')
+
 # Discover supported extension names
 carve.extensions()
 ```

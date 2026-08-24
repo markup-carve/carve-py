@@ -916,6 +916,57 @@ fn to_carve(source: &str) -> String {
     carve_rs::to_carve(source)
 }
 
+/// Import HTML into canonical Carve and return the loss report beside it.
+#[pyfunction]
+#[pyo3(signature = (source, mode = "safe"))]
+fn from_html(py: Python<'_>, source: &str, mode: &str) -> PyResult<Py<PyDict>> {
+    let mode = carve_rs::HtmlImportMode::from_name(mode)
+        .ok_or_else(|| PyValueError::new_err("mode must be safe, semantic, or roundtrip"))?;
+    let result = carve_rs::html_to_carve(
+        source,
+        &carve_rs::HtmlImportOptions {
+            mode,
+            ..Default::default()
+        },
+    )
+    .map_err(|error| PyValueError::new_err(format!("HTML import failed: {error:?}")))?;
+    let diagnostics = result
+        .report
+        .diagnostics
+        .iter()
+        .map(|diagnostic| {
+            let item = PyDict::new(py);
+            item.set_item("code", diagnostic.code.as_str())?;
+            item.set_item("message", &diagnostic.message)?;
+            item.set_item("severity", diagnostic.severity.as_str())?;
+            if let Some(path) = &diagnostic.path {
+                item.set_item("path", path)?;
+            }
+            Ok(item.unbind())
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+    let report = PyDict::new(py);
+    report.set_item("mode", result.report.mode.as_str())?;
+    report.set_item("adapter", result.report.adapter.as_str())?;
+    report.set_item("diagnostics", diagnostics)?;
+    let output = PyDict::new(py);
+    output.set_item("value", result.value)?;
+    output.set_item("report", report)?;
+    Ok(output.unbind())
+}
+
+/// Import Markdown into canonical Carve with the shared migration result shape.
+#[pyfunction]
+fn from_markdown(py: Python<'_>, source: &str) -> PyResult<Py<PyDict>> {
+    let report = PyDict::new(py);
+    report.set_item("source_format", "markdown")?;
+    report.set_item("diagnostics", Vec::<String>::new())?;
+    let output = PyDict::new(py);
+    output.set_item("value", carve_rs::markdown_to_carve(source))?;
+    output.set_item("report", report)?;
+    Ok(output.unbind())
+}
+
 /// Read a document's provenance marker, as written by `carve fmt --stamp`.
 ///
 /// Returns a dict `{"version": ..., "generated_by": ...}`, or None when the
@@ -1111,6 +1162,8 @@ fn carve(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(to_plain_text, m)?)?;
     m.add_function(wrap_pyfunction!(to_ansi, m)?)?;
     m.add_function(wrap_pyfunction!(to_carve, m)?)?;
+    m.add_function(wrap_pyfunction!(from_html, m)?)?;
+    m.add_function(wrap_pyfunction!(from_markdown, m)?)?;
     m.add_function(wrap_pyfunction!(extensions, m)?)?;
     m.add_function(wrap_pyfunction!(read_stamp, m)?)?;
     m.add_function(wrap_pyfunction!(needs_review, m)?)?;
