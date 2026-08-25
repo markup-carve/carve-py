@@ -274,17 +274,24 @@ def test_fenced_render_presets_are_exposed_by_name():
         assert name in carve.extensions()
 
 
+# The fenced-render assertions below match an OPENING TAG PREFIX rather than a
+# complete tag: `<pre class="plantuml"` and not `<pre class="plantuml">`. What
+# they are about is the tag and the class the preset derives, and the engine is
+# free to add attributes beside them - carve-rs 1e4b5a6 added `role="img"` and
+# an `aria-label` to every diagram, which broke three of these while changing
+# nothing they exist to check. Re-adding the `>` re-pins the whole attribute
+# list to whatever the engine emitted the day it was written.
 def test_plantuml_preset_emits_pre_class_plantuml():
     for lang in ("plantuml", "puml"):
         out = carve.to_html(
             f"``` {lang}\nA -> B\n```", extensions=["fenced_render_plantuml"]
         )
-        assert '<pre class="plantuml">' in out
+        assert '<pre class="plantuml"' in out
 
 
 def test_graphviz_preset_claims_dot_and_graphviz():
     out = carve.to_html("``` dot\na -> b\n```", extensions=["fenced_render_graphviz"])
-    assert '<pre class="graphviz">' in out
+    assert '<pre class="graphviz"' in out
 def test_extension_options_validation_and_behavior():
     with pytest.raises(ValueError, match="not in extensions"):
         carve.to_html("# Hi", extensions=["tabs"], extension_options={"heading-permalinks": {"aria_label": "Back"}})
@@ -347,15 +354,15 @@ def test_fenced_render_derives_the_defaults_it_is_not_given():
         extensions=["fenced-render"],
         extension_options={"fenced-render": {"content_mode": "json"}},
     )
-    assert json_mode.startswith('<div class="mermaid">'), json_mode[:60]
+    assert json_mode.startswith('<div class="mermaid"'), json_mode[:60]
 
     renamed = carve.to_html(
         "``` diagram\nx\n```\n",
         extensions=["fenced-render"],
         extension_options={"fenced-render": {"languages": ["diagram"]}},
     )
-    assert renamed.startswith('<pre class="diagram">'), renamed[:60]
+    assert renamed.startswith('<pre class="diagram"'), renamed[:60]
 
     assert carve.to_html(source, extensions=["fenced-render"]).startswith(
-        '<pre class="mermaid">'
+        '<pre class="mermaid"'
     )
