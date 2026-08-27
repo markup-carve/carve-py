@@ -1,6 +1,6 @@
 [package]
 name = "python-carve"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "Python bindings (PyO3) for the Carve markup language, over the carve-rs engine."
 license = "MIT"
@@ -35,7 +35,7 @@ pyo3 = { version = "0.27", features = ["abi3-py38", "extension-module"] }
 # manifest said current (#16). #17 bumped the lock; this makes the manifest say
 # what it does, so the next drift is a line in a diff rather than a lockfile
 # nobody reads.
-carve_rs = { package = "carve-lang", git = "https://github.com/markup-carve/carve-rs", rev = "3a6633395c45450864a8f4dabdf394ff5510fc81" }
+carve_rs = { package = "carve-lang", git = "https://github.com/markup-carve/carve-rs", rev = "2e9c43f22c5ed05dbd93323ae6b9c94bb867b285" }
 #
 # For local development against a sibling checkout, swap the line above for a
 # path dependency:

@@ -8,6 +8,8 @@ therefore get an entry of their own.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-08-27
+
 ### Added
 
 - `carve.from_html()` and `carve.from_markdown()` expose migration with a
@@ -45,6 +47,16 @@ therefore get an entry of their own.
   x86_64, each built and gated on its own architecture. `pip install
   carve-lang` previously fell back to the sdist on Alpine, on ARM Linux and on
   an Intel Mac, which needs a Rust toolchain at install time (#52).
+
+### Changed
+
+- Embed released carve-rs 0.1.4 (`2e9c43f2`) instead of the stale
+  `3a663339` revision. This adds typed citation items, published block-image
+  promotion, the `{empty}` spelling for an empty definition body, and the
+  definition/footnote/list continuation-column fixes included in that release.
+- The built wheel renders all 1538 mandatory corpus documents byte-identically
+  against both the engine-pinned spec and current spec `main`; the full AST and
+  non-HTML target sweeps pass through the installed artifact.
 
 ## 0.1.1 - 2026-08-18
 
