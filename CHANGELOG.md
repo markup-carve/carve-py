@@ -8,6 +8,8 @@ therefore get an entry of their own.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-09-08
+
 ### Fixed
 
 - Embed released carve-rs 0.1.5 (`56cb3536`) instead of 0.1.4 (`2e9c43f2`): a
@@ -143,3 +145,7 @@ First release.
   an unstamped document answers "needs review".
 - Ship abi3 wheels (`abi3-py38`), so one wheel per platform covers CPython 3.8+,
   with `carve.pyi` type stubs.
+
+[Unreleased]: https://github.com/markup-carve/carve-py/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/markup-carve/carve-py/compare/v0.1.2...v0.1.3
+[0.1.2]: https://github.com/markup-carve/carve-py/compare/v0.1.1...v0.1.2
