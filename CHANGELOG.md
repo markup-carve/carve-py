@@ -8,6 +8,17 @@ therefore get an entry of their own.
 
 ## [Unreleased]
 
+### Fixed
+
+- Embed released carve-rs 0.1.5 (`56cb3536`) instead of 0.1.4 (`2e9c43f2`): a
+  lone `|` line no longer panics (an unauthenticated one-byte DoS for an
+  embedder rendering untrusted Carve), and a lone pipe opens no table row
+  (markup-carve/carve-rs#1554).
+- The same bump brings the carve-rs 0.1.5 parity fixes: nested and below-column
+  fences, comment fences and nested definitions are placed by their content
+  column instead of leaking, an all-blank standard-table row is no longer a
+  table, and a link or image destination title fills the HTML `title` slot.
+
 ## [0.1.2] - 2026-08-27
 
 ### Added
