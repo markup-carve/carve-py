@@ -1212,9 +1212,18 @@ fn parse_include_target(name: &str) -> PyResult<IncludeTarget> {
 /// supplied and already knows - is stripped back off. A path that is not under
 /// the root is the directive's own text (an unresolved target is reported as
 /// written), so it passes through.
+///
+/// Separated with `/` on every platform. A directive is written with `/`, and a
+/// host matches these against its own page paths, which are `/`-separated in
+/// MkDocs and Jekyll alike; a Windows build reporting `chapters\one.crv` would
+/// make the same document answer differently there.
 fn root_relative(root_real: &std::path::Path, id: &str) -> String {
     match std::path::Path::new(id).strip_prefix(root_real) {
-        Ok(rest) => rest.to_string_lossy().into_owned(),
+        Ok(rest) => rest
+            .components()
+            .map(|part| part.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/"),
         Err(_) => id.to_string(),
     }
 }

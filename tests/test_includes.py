@@ -74,6 +74,10 @@ def test_a_warning_in_the_root_document_names_its_source_path(book):
 
 
 def test_an_expansion_reports_every_target_it_read(book):
+    # Also the separator guard. Ids are `/`-separated on every platform so a
+    # host can match them against its own page paths; on POSIX that is what the
+    # native separator gives anyway, so only the Windows wheel job can fail
+    # this one - and it did, on the first push of this file.
     result = render(book, (book / "main.crv").read_text(), source_path="main.crv")
     assert [dep["id"] for dep in result["dependencies"]] == [
         "chapters/one.crv",
