@@ -504,8 +504,7 @@ fn build_symbols(symbols: &Bound<'_, PyDict>) -> PyResult<Vec<(String, String)>>
 /// outlive the borrow. Both live in this single stack frame, satisfying the
 /// lifetime without leaking.
 #[allow(clippy::too_many_arguments)]
-fn render<F>(
-    source: &str,
+fn with_options<T, F>(
     names: &[String],
     extension_options: Option<&Bound<'_, PyDict>>,
     mode: Mode,
@@ -515,9 +514,9 @@ fn render<F>(
     profile: Option<&str>,
     engine_options: EngineOptions,
     f: F,
-) -> PyResult<String>
+) -> PyResult<T>
 where
-    F: FnOnce(&str, &Options<'_>) -> Result<String, ProfileViolationError>,
+    F: FnOnce(&Options<'_>) -> PyResult<T>,
 {
     let owned = boxed_extensions(names, extension_options)?;
     let mut options = Options::new().with_mode(mode).with_renderers(renderers);
@@ -534,11 +533,42 @@ where
         options = options.with_profile(parse_profile(name)?);
     }
     options = engine_options.apply(options);
-    // The fallible engine entry points, so a profile rejection raises instead of
-    // returning an empty string. The infallible `to_*_with_options` wrappers are
-    // `try_...().unwrap_or_default()`, which would make a rejected 20 KB comment
-    // indistinguishable from a document that legitimately rendered to nothing.
-    f(source, &options).map_err(|e| PyValueError::new_err(e.to_string()))
+    f(&options)
+}
+
+/// [`with_options`] for the single-string entry points.
+#[allow(clippy::too_many_arguments)]
+fn render<F>(
+    source: &str,
+    names: &[String],
+    extension_options: Option<&Bound<'_, PyDict>>,
+    mode: Mode,
+    renderers: StaticRenderers,
+    symbols: &[(String, String)],
+    safe: bool,
+    profile: Option<&str>,
+    engine_options: EngineOptions,
+    f: F,
+) -> PyResult<String>
+where
+    F: FnOnce(&str, &Options<'_>) -> Result<String, ProfileViolationError>,
+{
+    with_options(
+        names,
+        extension_options,
+        mode,
+        renderers,
+        symbols,
+        safe,
+        profile,
+        engine_options,
+        // The fallible engine entry points, so a profile rejection raises
+        // instead of returning an empty string. The infallible
+        // `to_*_with_options` wrappers are `try_...().unwrap_or_default()`,
+        // which would make a rejected 20 KB comment indistinguishable from a
+        // document that legitimately rendered to nothing.
+        |options| f(source, options).map_err(|e| PyValueError::new_err(e.to_string())),
+    )
 }
 
 #[derive(Default, PartialEq)]
@@ -1148,6 +1178,223 @@ fn lint(
     Ok(out)
 }
 
+/// Which renderer `render_with_includes` runs over the expanded document.
+///
+/// `carve` is deliberately absent: spec I15 excludes the Carve writer from
+/// expansion, because inlining a child into the formatter's output rewrites
+/// the author's document instead of formatting it.
+#[derive(Clone, Copy, PartialEq)]
+enum IncludeTarget {
+    Html,
+    Markdown,
+    Plain,
+    Ansi,
+}
+
+fn parse_include_target(name: &str) -> PyResult<IncludeTarget> {
+    match name {
+        "html" => Ok(IncludeTarget::Html),
+        "markdown" => Ok(IncludeTarget::Markdown),
+        "plain" => Ok(IncludeTarget::Plain),
+        "ansi" => Ok(IncludeTarget::Ansi),
+        other => Err(PyValueError::new_err(format!(
+            "unknown carve render target: {other:?} (supported: \"html\", \"markdown\", \"plain\", \"ansi\")"
+        ))),
+    }
+}
+
+/// An include identity as the caller should see it: relative to the
+/// containment root.
+///
+/// The resolver's ids are canonical absolute paths, and they reach a reader
+/// through warnings and dependencies alike. A build that prints them puts the
+/// machine's directory layout on a public page, so the root - which the caller
+/// supplied and already knows - is stripped back off. A path that is not under
+/// the root is the directive's own text (an unresolved target is reported as
+/// written), so it passes through.
+fn root_relative(root_real: &std::path::Path, id: &str) -> String {
+    match std::path::Path::new(id).strip_prefix(root_real) {
+        Ok(rest) => rest.to_string_lossy().into_owned(),
+        Err(_) => id.to_string(),
+    }
+}
+
+/// Render Carve source with `{{ path }}` includes expanded from disk.
+///
+/// `include_root` is the containment root: no include resolves outside it, and
+/// it must be an ABSOLUTE path. A relative spec names no root - every
+/// canonicalizer resolves one against the process working directory, which
+/// spec PART 9 section 19 forbids the root defaulting to - so it raises
+/// `ValueError`. Absolutize a relative directory yourself, where the decision
+/// stays visible.
+///
+/// `source_path` is the identity of the document in `source`: what a nested
+/// relative include resolves against, and the `file` reported on a warning
+/// raised in the root document. Absolute, or relative to `include_root`.
+///
+/// Returns a dict:
+///
+///   - `output` the rendered document, in `target`
+///   - `warnings` list of `{rule, message, file}`, `file` root-relative
+///   - `suppressed_warnings` warnings raised past the cap, so a capped report
+///     is never read as a clean one
+///   - `dependencies` list of `{id, resolved, denial}`, every target touched
+///     including the refused ones, in first-encounter order. `id` is
+///     root-relative, `resolved` says the source WAS READ and not that it was
+///     merged, and `denial` is the refusal class or `None`.
+///
+/// The string entry points (`to_html` and friends) have no root and expand
+/// nothing; a directive stays literal there.
+#[pyfunction]
+#[pyo3(signature = (source, include_root, target = "html", extensions = None, mode = "interactive", renderers = None, symbols = None, safe = false, profile = None, *, source_path = None, allow_absolute = false, max_file_bytes = None, max_depth = None, max_bytes = None, max_resolver_calls = None, max_warnings = None, extension_options = None, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
+#[allow(clippy::too_many_arguments)]
+fn render_with_includes(
+    py: Python<'_>,
+    source: &str,
+    include_root: &str,
+    target: &str,
+    extensions: Option<Vec<String>>,
+    mode: &str,
+    renderers: Option<Bound<'_, PyDict>>,
+    symbols: Option<Bound<'_, PyDict>>,
+    safe: bool,
+    profile: Option<&str>,
+    source_path: Option<String>,
+    allow_absolute: bool,
+    max_file_bytes: Option<u64>,
+    max_depth: Option<usize>,
+    max_bytes: Option<usize>,
+    max_resolver_calls: Option<usize>,
+    max_warnings: Option<usize>,
+    extension_options: Option<Bound<'_, PyDict>>,
+    lowercase_heading_ids: Option<bool>,
+    positions: Option<bool>,
+    sections: Option<bool>,
+    source_lines: Option<bool>,
+    mention_url: Option<String>,
+    tag_url: Option<String>,
+    profile_base_host: Option<String>,
+) -> PyResult<Py<PyDict>> {
+    let which = parse_include_target(target)?;
+    let (parsed_mode, static_renderers) = resolve_mode_and_renderers(mode, renderers.as_ref())?;
+    let symbol_pairs = match symbols.as_ref() {
+        Some(dict) => build_symbols(dict)?,
+        None => Vec::new(),
+    };
+    let engine_options = EngineOptions {
+        lowercase_heading_ids,
+        positions,
+        sections,
+        source_lines,
+        mention_url,
+        tag_url,
+        profile_base_host,
+    };
+
+    // The configured root reaches the resolver UNCHANGED. Absolutizing it here
+    // would be the one thing that disarms the refusal above: `include_root=".."`
+    // would canonicalize to the parent of whatever directory the build happens
+    // to run in, and containment would silently sit there.
+    let mut resolver = carve_rs::FileSystemResolver::new(include_root)
+        .map_err(|e| {
+            PyValueError::new_err(format!("cannot use include root {include_root:?}: {e}"))
+        })?
+        .allow_absolute(allow_absolute);
+    if let Some(bytes) = max_file_bytes {
+        resolver = resolver.with_max_file_bytes(Some(bytes));
+    }
+    // The resolver canonicalized this already; it is repeated here only to have
+    // the same prefix `root_relative` has to strip.
+    let root_real = std::fs::canonicalize(include_root)?;
+
+    let mut include_options = carve_rs::IncludeOptions::new().with_resolver(&resolver);
+    if let Some(path) = source_path {
+        include_options = include_options.with_source_path(path);
+    }
+    if let Some(depth) = max_depth {
+        include_options = include_options.with_max_depth(depth);
+    }
+    if let Some(bytes) = max_bytes {
+        include_options = include_options.with_max_bytes(bytes);
+    }
+    if let Some(calls) = max_resolver_calls {
+        include_options = include_options.with_max_resolver_calls(calls);
+    }
+    if let Some(warnings) = max_warnings {
+        include_options = include_options.with_max_warnings(warnings);
+    }
+
+    let names = extensions.unwrap_or_default();
+    with_options(
+        &names,
+        extension_options.as_ref(),
+        parsed_mode,
+        static_renderers,
+        &symbol_pairs,
+        safe,
+        profile,
+        engine_options,
+        |options| {
+            let target_is_html = which == IncludeTarget::Html;
+            let prepared = carve_rs::prepare_doc_with_includes(
+                source,
+                options,
+                &include_options,
+                // Every target but HTML is inherently static, so it renders
+                // under the interactive mode the other renderers assume.
+                if target_is_html {
+                    options.mode
+                } else {
+                    Mode::Interactive
+                },
+                target_is_html,
+            )
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+            let output = match which {
+                IncludeTarget::Html => carve_rs::render_html_with_options(&prepared.doc, options),
+                IncludeTarget::Markdown => {
+                    carve_rs::render_markdown_with_options(&prepared.doc, options)
+                }
+                IncludeTarget::Plain => {
+                    carve_rs::render_plain_text_with_options(&prepared.doc, options)
+                }
+                IncludeTarget::Ansi => carve_rs::render_ansi_with_options(&prepared.doc, options),
+            }
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+            let warnings = pyo3::types::PyList::empty(py);
+            for warning in &prepared.warnings {
+                let item = PyDict::new(py);
+                item.set_item("rule", &warning.rule)?;
+                item.set_item("message", &warning.message)?;
+                item.set_item(
+                    "file",
+                    warning
+                        .file
+                        .as_deref()
+                        .map(|file| root_relative(&root_real, file)),
+                )?;
+                warnings.append(item)?;
+            }
+            let dependencies = pyo3::types::PyList::empty(py);
+            for dependency in &prepared.dependencies {
+                let item = PyDict::new(py);
+                item.set_item("id", root_relative(&root_real, &dependency.id))?;
+                item.set_item("resolved", dependency.resolved)?;
+                item.set_item("denial", dependency.denial.map(|denial| denial.as_str()))?;
+                dependencies.append(item)?;
+            }
+
+            let out = PyDict::new(py);
+            out.set_item("output", output)?;
+            out.set_item("warnings", warnings)?;
+            out.set_item("suppressed_warnings", prepared.suppressed_warnings)?;
+            out.set_item("dependencies", dependencies)?;
+            Ok(out.unbind())
+        },
+    )
+}
+
 #[pyfunction]
 fn extensions() -> Vec<String> {
     supported()
@@ -1170,5 +1417,6 @@ fn carve(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(parse, m)?)?;
     m.add_function(wrap_pyfunction!(parse_json, m)?)?;
     m.add_function(wrap_pyfunction!(lint, m)?)?;
+    m.add_function(wrap_pyfunction!(render_with_includes, m)?)?;
     Ok(())
 }

@@ -185,6 +185,65 @@ which target takes which. Most of these options describe HTML markup, so on
 `lowercase_heading_ids` does change those three, because all four renderers
 resolve `</#id>` crossrefs through the same heading index.
 
+## Includes
+
+`carve.render_with_includes()` renders a file-backed document with its
+`{{ path }}` includes expanded, contained to a root you name:
+
+```python
+import carve
+
+result = carve.render_with_includes(
+    open("book/main.crv").read(),
+    "/srv/book",                  # containment root, absolute
+    source_path="main.crv",       # or absolute; relative is read from the root
+)
+result["output"]        # the rendered HTML
+result["dependencies"]  # every target touched, for a watcher
+result["warnings"]      # what degraded, and where
+```
+
+The string entry points (`to_html` and friends) take no root and expand
+nothing - a directive stays literal there, so a caller who never opted in never
+touches the filesystem.
+
+**The root must be absolute.** A relative value names no root: every
+canonicalizer resolves one against the process working directory, which is
+arbitrary with respect to the document, so `include_root=".."` would silently
+root containment at the parent of wherever the build ran. It raises
+`ValueError` instead. Absolutize it yourself if you have a relative directory
+in hand, where the decision is visible.
+
+Nothing resolves outside the root. A `../` climb, a symlink pointing out, and
+an absolute path are all refused after canonicalization, so a path that leaves
+the root by any spelling is denied rather than read.
+
+Each dependency is a dict:
+
+| Key | What |
+| --- | --- |
+| `id` | the target, relative to the root |
+| `resolved` | the source **was read** - not that it was merged |
+| `denial` | the refusal class, or `None`: `outside-root`, `not-found`, `no-root`, `include-denied`, `include-unresolved` |
+
+Refused targets are listed too. A host that watched only what it read would
+never learn that a missing target now exists, so the preview would stay stale
+at the moment the author fixes it.
+
+Each warning carries `rule`, `message` and `file` (the document it arose in,
+root-relative, or `None` for a root document given no `source_path`). The
+engine reports a containment denial and a missing file alike as
+`include-unresolved`, so a warning shown to a reader cannot be used to probe
+the filesystem. `suppressed_warnings` counts the ones past `max_warnings`, so a
+capped report is never read as a clean one.
+
+`target` selects the renderer: `"html"` (default), `"markdown"`, `"plain"` or
+`"ansi"`. `extensions`, `profile`, `symbols`, `renderers` and the engine
+options work as they do on `to_html`, and an extension applies to an included
+child exactly as it does to the parent. The budgets - `max_depth`, `max_bytes`,
+`max_resolver_calls`, `max_warnings` and the per-file `max_file_bytes` - pass
+through to the engine; omit one to keep its default.
+
 ## Symbols
 
 A `:name:` symbol renders its literal `:name:` source unless the name is in the
