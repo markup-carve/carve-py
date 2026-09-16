@@ -319,6 +319,76 @@ def lint(
     """
     ...
 
+class IncludeWarning(TypedDict):
+    rule: str
+    message: str
+    file: Optional[str]
+
+class IncludeDependency(TypedDict):
+    id: str
+    resolved: bool
+    denial: Optional[str]
+
+class IncludeResult(TypedDict):
+    output: str
+    warnings: List[IncludeWarning]
+    suppressed_warnings: int
+    dependencies: List[IncludeDependency]
+
+def render_with_includes(
+    source: str,
+    include_root: str,
+    target: str = "html",
+    extensions: Optional[List[str]] = None,
+    mode: str = "interactive",
+    renderers: Optional[Dict[str, Renderer]] = None,
+    symbols: Optional[Dict[str, str]] = None,
+    safe: bool = False,
+    profile: Optional[str] = None,
+    *,
+    source_path: Optional[str] = None,
+    allow_absolute: bool = False,
+    max_file_bytes: Optional[int] = None,
+    max_depth: Optional[int] = None,
+    max_bytes: Optional[int] = None,
+    max_resolver_calls: Optional[int] = None,
+    max_warnings: Optional[int] = None,
+    extension_options: Optional[ExtensionOptions] = None,
+    lowercase_heading_ids: Optional[bool] = None,
+    positions: Optional[bool] = None,
+    sections: Optional[bool] = None,
+    source_lines: Optional[bool] = None,
+    mention_url: Optional[str] = None,
+    tag_url: Optional[str] = None,
+    profile_base_host: Optional[str] = None,
+) -> IncludeResult:
+    """Render Carve source with ``{{ path }}`` includes expanded from disk.
+
+    ``include_root`` is the containment root: no include resolves outside it,
+    and it must be an **absolute** path. A relative value names no root - every
+    canonicalizer resolves one against the process working directory, which
+    PART 9 section 19 forbids the root defaulting to - so it raises
+    ``ValueError``. Absolutize it yourself if you need to, where you can see
+    the decision.
+
+    ``source_path`` is the identity of the document in ``source``: the chain a
+    nested relative include resolves against, and the ``file`` reported on a
+    warning raised in the root document. Absolute, or relative to
+    ``include_root``.
+
+    ``target`` is ``"html"`` (default), ``"markdown"``, ``"plain"`` or
+    ``"ansi"``. There is no ``"carve"``: spec I15 excludes the Carve writer,
+    because inlining a child into the formatter's output rewrites the author's
+    document rather than formatting it.
+
+    Paths in the result are relative to ``include_root``, so a report shown to
+    a reader carries no host directory layout.
+
+    The string entry points (:func:`to_html` and friends) have no root and
+    expand nothing - a directive stays literal there.
+    """
+    ...
+
 def extensions() -> List[str]:
     """Return the list of supported extension names."""
     ...
