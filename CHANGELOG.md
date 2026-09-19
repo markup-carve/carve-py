@@ -8,6 +8,37 @@ therefore get an entry of their own.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-09-19
+
+### Added
+
+- `carve.render_with_includes(source, include_root, ...)` renders a file-backed
+  document with its `{{ path }}` includes expanded, contained to a root the
+  caller names. It returns `output`, `dependencies` and `warnings` rather than a
+  string, so a build can watch what it touched and see what degraded. `target`
+  selects `html`, `markdown`, `plain` or `ansi`; spec I15 excludes the Carve
+  writer, because inlining a child into the formatter's output rewrites the
+  author's document instead of formatting it. The string entry points are
+  unchanged: no root, no expansion, and a caller who never opts in never touches
+  the filesystem (#70, #71).
+
+### Changed
+
+- Embed released carve-rs 0.1.6 (`d7837249`) instead of 0.1.5 (`56cb3536`). A
+  substitution node in the tree carries `old` and `new` as arrays of inline
+  nodes where it carried the strings `oldText` and `newText`, which is breaking
+  for a caller reading that node (markup-carve/carve-rs#1756).
+
+### Fixed
+
+- The same bump brings the carve-rs 0.1.6 writer and parser fixes. The Markdown
+  and Carve writers escape what would reopen a construct on the way back in: a
+  literal tilde, an underscore pair the line would pair, a leading hash, a
+  heading's trailing hash run, a caret before a bracket node, and the colon of a
+  trailing `:name`. Parsing tightens around braced inlines, forced closers,
+  escaped markers, adjacent links, blank table rows and a code span's closer.
+  HTML over the spec corpus is unchanged: 1740/1740 documents byte-identical.
+
 ## [0.1.3] - 2026-09-08
 
 ### Fixed
@@ -146,6 +177,7 @@ First release.
 - Ship abi3 wheels (`abi3-py38`), so one wheel per platform covers CPython 3.8+,
   with `carve.pyi` type stubs.
 
-[Unreleased]: https://github.com/markup-carve/carve-py/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/markup-carve/carve-py/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/markup-carve/carve-py/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/markup-carve/carve-py/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/markup-carve/carve-py/compare/v0.1.1...v0.1.2
