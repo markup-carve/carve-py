@@ -2,7 +2,7 @@
 
 Notable changes to the `carve-lang` distribution (import name `carve`).
 
-The engine is carve-rs, embedded at the revision recorded in `Cargo.lock`, so an
+The engine is carve-rs, embedded at the version recorded in `Cargo.lock`, so an
 engine bump can change rendering without a line of Python changing. Engine bumps
 therefore get an entry of their own.
 
