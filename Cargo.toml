@@ -27,15 +27,9 @@ pyo3 = { version = "0.27", features = ["abi3-py38", "extension-module"] }
 # not collide with our own `carve` #[pymodule]. The crate is published as
 # `carve-lang` (the name `carve` was taken on crates.io).
 #
-# Pinned to an EXACT revision, the way carve-wasm and carve-rb pin it.
-#
-# `branch = "main"` beside a committed Cargo.lock is the worst of both: the
-# declaration reads as tracking, and `cargo build` keeps the locked revision.
-# That is how the lock came to sit 65 commits behind while everything about the
-# manifest said current (#16). #17 bumped the lock; this makes the manifest say
-# what it does, so the next drift is a line in a diff rather than a lockfile
-# nobody reads.
-carve_rs = { package = "carve-lang", git = "https://github.com/markup-carve/carve-rs", rev = "d7837249c64b88879b04cd71b8b5555ff246e16f" }
+# Pinned to an EXACT published version. scripts/pinned-spec-commit.py resolves
+# it through the carve-rs release tag to the spec the corpus gate runs against.
+carve_rs = { package = "carve-lang", version = "=0.1.6" }
 #
 # For local development against a sibling checkout, swap the line above for a
 # path dependency:
