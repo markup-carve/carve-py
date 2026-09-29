@@ -12,7 +12,7 @@ therefore get an entry of their own.
 
 - The engine is the published `carve-lang` 0.1.7 crate, up from 0.1.6. The wheel
   renders all 2134 corpus documents spec main declares byte-identically, where
-  the 0.1.5 wheel rendered 158 of them by a superseded rule.
+  the 0.1.5 wheel rendered 158 of them by a superseded rule (#78).
 - **Breaking for a `parse` consumer:** a footnote reference node spells its target
   as `label`, where it spelled it `id`. PART 12 section 25 settles that name on
   the definition, and every node also carries `attrs["id"]` for an authored
