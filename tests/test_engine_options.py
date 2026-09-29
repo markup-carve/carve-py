@@ -57,16 +57,24 @@ def test_lowercase_heading_ids_reaches_the_non_html_targets(render):
     assert default.count("FOO") > lowercased.count("FOO")
 
 
-def test_lowercase_heading_ids_reaches_the_markdown_id_attribute():
-    """Markdown is the one non-HTML target that writes the id out, so it can
-    assert the id itself rather than the crossref text it resolves."""
-    # Markdown writes the id only where something references it, so the
-    # document has to carry the crossref that makes the anchor load-bearing.
+def test_markdown_anchors_a_crossref_on_the_gfm_slug_whatever_the_engine_id_is():
+    """PART 11 section 11: the Markdown target writes no `{#id}` suffix, and a
+    resolved cross-reference takes the heading's GFM slug.
+
+    So `lowercase_heading_ids` cannot reach this anchor, and that is the point:
+    the slug is the one a GFM reader computes for itself, which is lower case
+    whatever id scheme the engine uses for HTML. Asserting both targets together
+    is what keeps this from being read as the option going missing
+    (markup-carve/carve-rs#2014)."""
     referenced = "# Mixed Case\n\nSee </#mixed-case> here.\n"
-    assert "{#Mixed-Case}" in carve.to_markdown(referenced)
-    assert "{#mixed-case}" in carve.to_markdown(
-        referenced, lowercase_heading_ids=True
-    )
+    for keywords in ({}, {"lowercase_heading_ids": True}):
+        markdown = carve.to_markdown(referenced, **keywords)
+        assert "{#" not in markdown
+        assert "(#mixed-case)" in markdown
+    # The HTML target still answers to the option, so the Markdown anchor above
+    # is a target rule rather than the option being dropped on the floor.
+    assert 'id="Mixed-Case"' in carve.to_html(referenced)
+    assert 'id="mixed-case"' in carve.to_html(referenced, lowercase_heading_ids=True)
 
 
 @pytest.mark.parametrize("render", NON_HTML_TARGETS, ids=lambda f: f.__name__)

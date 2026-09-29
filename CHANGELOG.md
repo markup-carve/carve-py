@@ -8,6 +8,27 @@ therefore get an entry of their own.
 
 ## [Unreleased]
 
+### Changed
+
+- The engine is the published `carve-lang` 0.1.7 crate, up from 0.1.6. The wheel
+  renders all 2134 corpus documents spec main declares byte-identically, where
+  the 0.1.5 wheel rendered 158 of them by a superseded rule.
+- **Breaking for a `parse` consumer:** a footnote reference node spells its target
+  as `label`, where it spelled it `id`. PART 12 section 25 settles that name on
+  the definition, and every node also carries `attrs["id"]` for an authored
+  `{#x}`, so the old name stood for two unrelated values on one object.
+  `attrs["id"]` is untouched (markup-carve/carve-rs#1853).
+- **Breaking for a `parse` consumer:** a code block's `content` is the literal
+  payload text, so `a`, `a\n` and `a\n\n` stay distinct in the tree where they
+  collapsed to one shape, and an empty fence holds no newline. Rendered HTML is
+  unchanged (markup-carve/carve-rs#2191, markup-carve/carve-rs#2195).
+- **Breaking for a `to_markdown` consumer:** the Markdown target follows PART 11
+  section 11 for a GFM reader. A heading takes no `{#id}` suffix, and a resolved
+  cross-reference is written with the heading's GFM slug, so
+  `lowercase_heading_ids` no longer changes that anchor - the slug is the one a
+  GFM reader computes for itself. `to_html` still answers to the option
+  (markup-carve/carve-rs#2014).
+
 ## [0.1.5] - 2026-09-21
 
 ### Changed
