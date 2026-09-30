@@ -29,6 +29,13 @@ All of it happens outside this repository's files.
 
 ## Per release
 
+Before pushing the tag, prepare its draft release from the version's
+`CHANGELOG.md` section, excluding the version heading. Resolve relative links
+to the tag and append
+`**Full Changelog**: https://github.com/markup-carve/carve-py/compare/vPREVIOUS...vX.Y.Z`.
+The publish job compares the stored body with that section and footer before
+uploading packages, and rechecks it before publishing the draft.
+
 1. Move the entries under a version heading in `CHANGELOG.md` and set its date.
 2. Set the version in **both** manifests: `project.version` in `pyproject.toml`
    and `package.version` in `Cargo.toml`. They feed different readers - PyPI and
