@@ -16,6 +16,9 @@ on:
     - cron: "25 6 * * *"
   workflow_dispatch:
 
+# Jobs carry an explicit timeout-minutes: without one GitHub applies a
+# 360-minute default, long enough for a stalled job to go unnoticed.
+
 jobs:
   # Which carve-rs is this binding running, and is that a revision that really
   # exists on `main`? Nothing here read the pin before: no `rev-list`, no
@@ -37,6 +40,7 @@ jobs:
   # only AGE can fail this job.
   engine-pin:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -71,6 +75,7 @@ jobs:
   panic-guard:
     name: Panic guard (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -81,6 +86,7 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -239,6 +245,7 @@ jobs:
   corpus-drift:
     name: Report the drift against spec main
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: build
     steps:
       - uses: actions/checkout@v4
