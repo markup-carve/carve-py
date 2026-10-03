@@ -314,7 +314,7 @@ jobs:
           python -m venv .gate
           if [ -x .gate/bin/python ]; then gate=.gate/bin/python; else gate=.gate/Scripts/python.exe; fi
           "$gate" -m pip install --quiet --upgrade pip
-          "$gate" -m pip install --quiet pytest
+          "$gate" -m pip install --quiet pytest "docling-core>=2.99,<3"
           "$gate" -m pip install --quiet --no-index --find-links dist --force-reinstall carve-lang
 
           "$gate" scripts/release-corpus-gate.py --wheel "$wheel" --corpus spec/tests/corpus
@@ -323,7 +323,7 @@ jobs:
           # above is the release blocker; this adds the AST walk, the non-HTML
           # targets and the version agreement, all measured through the artifact
           # rather than through a rebuild.
-          "$gate" -m pytest -q
+          "$gate" -m pytest -q tests
 
   # THE SAME GATE, FOR THE TWO WHEELS THAT CANNOT RUN ON THEIR OWN RUNNER.
   #
@@ -413,7 +413,7 @@ jobs:
                 --force-reinstall carve-lang
               .gate/bin/python scripts/release-corpus-gate.py \
                 --wheel "$WHEEL" --corpus spec/tests/corpus
-              .gate/bin/python -m pytest -q
+              .gate/bin/python -m pytest -q tests
             '
 
   publish:

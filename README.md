@@ -353,3 +353,63 @@ The string passed in `extensions=[...]` maps to a carve-rs extension:
 | `wikilinks`          | `[[wiki style]]` links                               |
 | `citations`          | citation references                                  |
 | `code-callouts`      | numbered callouts in fenced code blocks              |
+
+## Export Docling documents
+
+On Python 3.10 or newer, install the optional document-model dependency:
+
+```sh
+pip install 'carve-lang[docling]'
+```
+
+The exporter consumes a `DoclingDocument` directly. It builds Carve AST JSON
+and uses the native canonical writer, without a Markdown intermediate:
+
+```python
+from pathlib import Path
+import json
+from carve.docling import export_docling
+
+# document is the DoclingDocument returned by your extraction pipeline.
+output = Path('report')
+output.mkdir(exist_ok=True)
+result = export_docling(document, asset_dir=output / 'assets', strict=True)
+(output / 'document.crv').write_text(result.value, encoding='utf-8')
+(output / 'provenance.json').write_text(
+    json.dumps({'source': result.source, 'versions': result.versions,
+                'nodes': result.provenance}, ensure_ascii=False, indent=2),
+    encoding='utf-8',
+)
+```
+
+The first supported subset covers headings, text formatting, links, code, table
+headers and merged cells, captions, and figures with available images. Image
+assets are returned as PNG bytes under deterministic names. `asset_prefix`
+sets their relative URL directory; `asset_dir` selects where to write them.
+Without `asset_dir`, the caller saves `result.assets`.
+
+`result.diagnostics` identifies source references and affected AST paths. Lists
+and unsupported item roles become paragraphs with review diagnostics. Rich
+table cells become inline text with a diagnostic. Blank table rows that have no
+source spelling are omitted with diagnostics. Missing images retain their
+captions and require review. Invalid, overlapping, or inconsistent table cells
+are rejected. `max_table_cells` defaults to 100,000.
+
+`strict=True` raises `DoclingExportError` when diagnostics require review,
+before writing image assets. The exception exposes the proposed result. Set
+`strict=False` to inspect and accept a documented fallback. The report sets
+`complete=False`: it does not assess extraction accuracy or all layout and
+metadata properties. Provenance paths refer to `result.ast`, with Docling item
+references and available page coordinates. They are not source-byte offsets.
+Body content is exported by default; furniture and other layers require explicit
+`included_content_layers`. Inline text groups remain one paragraph. Text inside
+pictures is not copied into the body.
+
+Use `carve.parse(result.value)` for positions in the generated source.
+
+`carve.render_ast_json(json_text)` is also available independently. It validates
+the interchange tree through the native engine and rejects unspellable source
+content with `ValueError`. Existing `import carve` calls remain available;
+Docling is imported only when the optional exporter is called.
+
+Empty merged cells use a reported `[empty]` placeholder to retain their geometry. Strict export rejects this fallback. Cell bounding boxes carry a page number when the table has one provenance page; ambiguous associations require review.
