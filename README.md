@@ -353,3 +353,25 @@ The string passed in `extensions=[...]` maps to a carve-rs extension:
 | `wikilinks`          | `[[wiki style]]` links                               |
 | `citations`          | citation references                                  |
 | `code-callouts`      | numbered callouts in fenced code blocks              |
+
+## Write source from AST JSON
+
+`carve.render_ast_json(json_text)` validates an interchange tree through the
+native engine and writes Carve source. Invalid JSON, unknown node kinds, and
+unspellable trees raise `ValueError`.
+
+```python
+import json
+import carve
+
+source = carve.render_ast_json(json.dumps({
+    "type": "document",
+    "srcByteLength": 0,
+    "children": [{"type": "paragraph", "children": [
+        {"type": "text", "value": "*literal text*"}
+    ]}]
+}))
+```
+
+Docling conversion is maintained in the separate
+[docling-carve](https://github.com/markup-carve/docling-carve) package.

@@ -8,6 +8,9 @@ therefore get an entry of their own.
 
 ## [Unreleased]
 
+- Add `render_ast_json` to validate interchange trees and write source through
+  the native engine.
+
 ## [0.1.6] - 2026-09-29
 
 ### Changed

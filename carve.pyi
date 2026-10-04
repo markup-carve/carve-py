@@ -8,6 +8,10 @@ def to_carve(source: str) -> str:
     """Format Carve source into canonical Carve."""
     ...
 
+def render_ast_json(source: str) -> str:
+    """Validate AST JSON and write canonical source; reject unspellable trees."""
+    ...
+
 class MigrationDiagnostic(TypedDict, total=False):
     code: str
     message: str

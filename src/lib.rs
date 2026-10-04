@@ -946,6 +946,13 @@ fn to_carve(source: &str) -> String {
     carve_rs::to_carve(source)
 }
 
+/// Validate an AST JSON document and write canonical Carve source.
+#[pyfunction]
+fn render_ast_json(source: &str) -> PyResult<String> {
+    let doc = carve_rs::from_json(source).map_err(|e| PyValueError::new_err(e.to_string()))?;
+    carve_rs::render_carve(&doc).map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
 /// Import HTML into canonical Carve and return the loss report beside it.
 #[pyfunction]
 #[pyo3(signature = (source, mode = "safe"))]
@@ -1418,6 +1425,7 @@ fn carve(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(to_plain_text, m)?)?;
     m.add_function(wrap_pyfunction!(to_ansi, m)?)?;
     m.add_function(wrap_pyfunction!(to_carve, m)?)?;
+    m.add_function(wrap_pyfunction!(render_ast_json, m)?)?;
     m.add_function(wrap_pyfunction!(from_html, m)?)?;
     m.add_function(wrap_pyfunction!(from_markdown, m)?)?;
     m.add_function(wrap_pyfunction!(extensions, m)?)?;
