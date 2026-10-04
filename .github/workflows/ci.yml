@@ -116,7 +116,7 @@ jobs:
       # install it instead, which needs no environment juggling on CI.
       - name: Build and install the wheel
         run: |
-          pip install maturin pytest "docling-core>=2.99,<3"
+          pip install maturin pytest
           maturin build --release --out dist
           pip install --find-links dist --force-reinstall carve-lang
 

@@ -314,7 +314,7 @@ jobs:
           python -m venv .gate
           if [ -x .gate/bin/python ]; then gate=.gate/bin/python; else gate=.gate/Scripts/python.exe; fi
           "$gate" -m pip install --quiet --upgrade pip
-          "$gate" -m pip install --quiet pytest "docling-core>=2.99,<3"
+          "$gate" -m pip install --quiet pytest
           "$gate" -m pip install --quiet --no-index --find-links dist --force-reinstall carve-lang
 
           "$gate" scripts/release-corpus-gate.py --wheel "$wheel" --corpus spec/tests/corpus

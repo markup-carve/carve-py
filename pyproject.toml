@@ -28,9 +28,6 @@ classifiers = [
     "Typing :: Typed",
 ]
 
-[project.optional-dependencies]
-docling = ["docling-core>=2.99,<3; python_version >= '3.10'"]
-
 [project.urls]
 Homepage = "https://markup-carve.github.io/carve/"
 Repository = "https://github.com/markup-carve/carve-py"
@@ -39,10 +36,11 @@ Changelog = "https://github.com/markup-carve/carve-py/blob/main/CHANGELOG.md"
 Issues = "https://github.com/markup-carve/carve-py/issues"
 
 [tool.maturin]
-# Keep the native extension inside the Python package that ships optional
-# adapters. The package re-exports the existing native API.
-module-name = "carve.carve"
-python-source = "python"
+# The Rust cdylib is named `carve` (see Cargo.toml [lib]); maturin builds an
+# abi3 wheel from the abi3-py38 feature, so one wheel covers Python 3.8+.
+# module-name must be set explicitly so the import stays `carve` even though
+# the distribution name is `carve-lang`.
+module-name = "carve"
 features = ["pyo3/extension-module"]
 exclude = [
     ".github/**",

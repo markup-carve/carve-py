@@ -8,11 +8,8 @@ therefore get an entry of their own.
 
 ## [Unreleased]
 
-- Add an optional Docling exporter for headings, text, links, spanning tables,
-  captions, figures, image assets, provenance, and explicit review diagnostics.
-- Add `render_ast_json` to validate interchange trees and write canonical source
-  through the native engine. Package the optional Python module alongside the
-  existing native API.
+- Add `render_ast_json` to validate interchange trees and write source through
+  the native engine.
 
 ## [0.1.6] - 2026-09-29
 
