@@ -34,7 +34,9 @@ Before pushing the tag, prepare its draft release from the version's
 to the tag and append
 `**Full Changelog**: https://github.com/markup-carve/carve-py/compare/vPREVIOUS...vX.Y.Z`.
 The publish job compares the stored body with that section and footer before
-uploading packages, and rechecks it before publishing the draft.
+uploading packages, and rechecks it before publishing the draft. Rehearse that
+gate with `gh workflow run rehearse-release-notes.yml -f tag=vX.Y.Z` before
+tagging.
 
 1. Move the entries under a version heading in `CHANGELOG.md` and set its date.
 2. Set the version in **both** manifests: `project.version` in `pyproject.toml`
