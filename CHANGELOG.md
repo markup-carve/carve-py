@@ -12,7 +12,13 @@ therefore get an entry of their own.
   the native engine.
 - The engine is the published `carve-lang` 0.1.8 crate, up from 0.1.7. That
   revision pins spec `c61b0d5f`, so the wheel renders the corpus by the rules
-  the spec declares at that commit rather than the ones 0.1.7 carried.
+  the spec declares at that commit rather than the ones 0.1.7 carried. It also
+  ends a crash: `to_html("|{.r}")` raised `PanicException` on the 0.1.7 engine
+  the 0.1.6 wheel shipped (markup-carve/carve-rs#2341).
+- **Breaking for a crossref author:** heading cross-references, glossary terms
+  and include selectors compare names case-exactly, so `</#mixed-case>` no
+  longer reaches a heading whose id is `Mixed-Case` and stays literal
+  (markup-carve/carve-rs#2320, markup-carve/carve-rs#2325).
 
 ## [0.1.6] - 2026-09-29
 

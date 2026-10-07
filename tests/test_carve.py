@@ -366,3 +366,15 @@ def test_fenced_render_derives_the_defaults_it_is_not_given():
     assert carve.to_html(source, extensions=["fenced-render"]).startswith(
         '<pre class="mermaid"'
     )
+
+
+def test_a_lone_pipe_carrying_row_attributes_does_not_crash():
+    """carve-rs#2341. Under the engine carve-py 0.1.6 shipped (carve-lang
+    0.1.7) this input panicked inside the table check, so a Python caller got a
+    `PanicException` and a backtrace on stderr instead of a value - a crash
+    reachable from the public API on input a user can type. The line is
+    paragraph text, so there is nothing to refuse.
+    """
+    for source in ("|{.r}", "|{#i}", "a\n|{.r}\n"):
+        assert "<p>" in carve.to_html(source)
+    assert carve.to_html("|{.r}") == "<p>|{.r}</p>"

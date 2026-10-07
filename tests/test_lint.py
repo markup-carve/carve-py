@@ -9,6 +9,7 @@ most of them.
 """
 
 import carve
+import pytest
 
 
 ORPHAN = "{#orphan .cls}\n\n"
@@ -108,3 +109,66 @@ def test_an_unknown_extension_is_refused():
 
 def test_an_empty_document_reports_nothing_and_does_not_crash():
     assert carve.lint("") == []
+
+
+# --- Rules that arrived with engine 0.1.8 -----------------------------------
+#
+# `rule` is typed `str` in carve.pyi rather than a literal union, so a new rule
+# id reaches callers without any signature moving. Nothing here observed these
+# three changes, which is why they are written out: the binding returns whatever
+# the engine reports, and only a case naming the id can tell that it did.
+
+
+def test_a_reference_image_with_no_definition_is_reported():
+    """carve-rs#2336 brought reference IMAGES under the rule that already
+    covered reference links, deliberately without adding a rule id. Asserting
+    both shapes together is what pins that: a new id for the image would read
+    as a pass if only the image were checked."""
+    image = carve.lint("![alt][missing]\n")
+    link = carve.lint("[text][missing]\n")
+    assert [w["rule"] for w in image] == ["unresolved-reference-link"]
+    assert [w["rule"] for w in link] == ["unresolved-reference-link"]
+    assert "![alt][missing]" in image[0]["message"]
+
+
+def test_a_fragment_link_matching_no_id_is_reported():
+    warnings = carve.lint("# Real Heading\n\n[go](#nope)\n")
+    assert [w["rule"] for w in warnings] == ["broken-fragment-link"]
+    assert "#nope" in warnings[0]["message"]
+
+
+def test_a_fragment_link_through_a_reference_definition_is_reported():
+    """The destination is not written at the link, so a check that only read
+    inline tails would report nothing here."""
+    warnings = carve.lint("# Real Heading\n\n[go][d]\n\n[d]: #nope\n")
+    assert [w["rule"] for w in warnings] == ["broken-fragment-link"]
+
+
+def test_a_case_only_near_miss_names_the_real_id():
+    """Heading ids preserve case and fragments compare exactly (carve-rs#2320,
+    carve-rs#2325), so `#real-heading` does NOT reach `Real-Heading`. The
+    message carrying the real id is what makes that actionable."""
+    warnings = carve.lint("# Real Heading\n\n[go](#real-heading)\n")
+    assert [w["rule"] for w in warnings] == ["broken-fragment-link"]
+    assert '"Real-Heading"' in warnings[0]["message"]
+
+
+def test_an_exactly_matching_fragment_is_not_reported():
+    """Pairs with the case above. Without it, a rule that reported EVERY
+    fragment link would satisfy all of them."""
+    assert carve.lint("# Real Heading\n\n[go](#Real-Heading)\n") == []
+
+
+@pytest.mark.parametrize(
+    "link",
+    [
+        "[go](#)",
+        "[go](#top)",
+        "[go](other.html#nope)",
+        "[go](https://example.com/#nope)",
+    ],
+)
+def test_the_fragment_check_skips_what_it_cannot_judge(link):
+    """A bare `#` and `#top` are browser conventions, and a fragment on another
+    document or an absolute URL names an id this document does not hold."""
+    assert carve.lint("# Real Heading\n\n" + link + "\n") == []
