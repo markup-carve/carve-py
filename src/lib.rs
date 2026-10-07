@@ -941,9 +941,18 @@ fn to_ansi(
 }
 
 /// Format Carve source into the engine's canonical Carve spelling.
+///
+/// By default a writer refusal comes back as the source as authored, which a
+/// caller cannot tell from a document that was already canonical. `strict`
+/// raises `ValueError` carrying the refusal instead (carve-py#90).
 #[pyfunction]
-fn to_carve(source: &str) -> String {
-    carve_rs::to_carve(source)
+#[pyo3(signature = (source, *, strict = false))]
+fn to_carve(source: &str, strict: bool) -> PyResult<String> {
+    if strict {
+        return carve_rs::try_to_carve_with_options(source, &Options::default())
+            .map_err(|e| PyValueError::new_err(e.to_string()));
+    }
+    Ok(carve_rs::to_carve(source))
 }
 
 /// Validate an AST JSON document and write canonical Carve source.

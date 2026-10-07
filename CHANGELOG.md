@@ -10,6 +10,9 @@ therefore get an entry of their own.
 
 ## [0.1.7] - 2026-10-07
 
+- `to_carve` takes a keyword-only `strict`. With it, a writer refusal raises
+  `ValueError` instead of returning the source as authored, which a caller
+  could not tell from a document that was already canonical (#90).
 - Add `render_ast_json` to validate interchange trees and write source through
   the native engine.
 - The engine is the published `carve-lang` 0.1.8 crate, up from 0.1.7. That
