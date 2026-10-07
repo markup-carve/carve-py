@@ -38,23 +38,30 @@ def test_unknown_keyword_is_rejected_by_python():
 # `to_markdown`, `to_plain_text` and `to_ansi` hardcoded `EngineOptions::default()`
 # until this landed, so nothing above reached them. Two headings differing only
 # in case is what makes `lowercase_heading_ids` visible in a target that emits
-# no ids of its own: lowercasing collides them, the second heading is
-# deduplicated to a different id, and every `</#foo>` crossref in the document
-# resolves to the FIRST heading instead of the second.
+# no ids of its own: the ids are `Foo` and `FOO` by default, and lowercasing
+# collides them, so the second is deduplicated and both ids move.
 COLLIDING_HEADINGS = "# Foo\n\n## FOO\n\nSee </#foo> and </#FOO>.\n"
+
+# Cross-references compare case exactly (carve-rs#2320), so a crossref spelled
+# in lower case resolves ONLY once the option has lowercased the heading's id.
+# That makes one document show the option arriving on a target twice over: the
+# marker is still literal by default and has become a link with the option on.
+LOWERCASE_CROSSREF = "# Mixed Case\n\nSee </#mixed-case> here.\n"
 
 NON_HTML_TARGETS = [carve.to_markdown, carve.to_plain_text, carve.to_ansi]
 
 
 @pytest.mark.parametrize("render", NON_HTML_TARGETS, ids=lambda f: f.__name__)
 def test_lowercase_heading_ids_reaches_the_non_html_targets(render):
-    default = render(COLLIDING_HEADINGS)
-    lowercased = render(COLLIDING_HEADINGS, lowercase_heading_ids=True)
+    default = render(LOWERCASE_CROSSREF)
+    lowercased = render(LOWERCASE_CROSSREF, lowercase_heading_ids=True)
     assert default != lowercased
-    # The crossrefs resolve to the second heading by default and to the first
-    # once the ids are lowercased, so the rendered link text changes with them.
-    assert "FOO" in default
-    assert default.count("FOO") > lowercased.count("FOO")
+    # Unresolved, the crossref reaches the target as its literal `</#...>`
+    # spelling; resolved, it is link text. Asserting the marker's presence and
+    # absence pins the DIRECTION, which a bare inequality would not.
+    assert "</#mixed-case>" in default
+    assert "</#mixed-case>" not in lowercased
+    assert "Mixed Case" in lowercased
 
 
 def test_markdown_anchors_a_crossref_on_the_gfm_slug_whatever_the_engine_id_is():
@@ -66,15 +73,24 @@ def test_markdown_anchors_a_crossref_on_the_gfm_slug_whatever_the_engine_id_is()
     whatever id scheme the engine uses for HTML. Asserting both targets together
     is what keeps this from being read as the option going missing
     (markup-carve/carve-rs#2014)."""
-    referenced = "# Mixed Case\n\nSee </#mixed-case> here.\n"
-    for keywords in ({}, {"lowercase_heading_ids": True}):
-        markdown = carve.to_markdown(referenced, **keywords)
+    # A crossref resolves only against the id its configuration produces
+    # (carve-rs#2320), so each case is written with the spelling that matches:
+    # `Mixed-Case` by default, `mixed-case` once the option lowercases it. The
+    # ANCHOR is `#mixed-case` either way, which is the claim being made.
+    for source, keywords in (
+        ("# Mixed Case\n\nSee </#Mixed-Case> here.\n", {}),
+        ("# Mixed Case\n\nSee </#mixed-case> here.\n", {"lowercase_heading_ids": True}),
+    ):
+        markdown = carve.to_markdown(source, **keywords)
         assert "{#" not in markdown
         assert "(#mixed-case)" in markdown
-    # The HTML target still answers to the option, so the Markdown anchor above
-    # is a target rule rather than the option being dropped on the floor.
-    assert 'id="Mixed-Case"' in carve.to_html(referenced)
-    assert 'id="mixed-case"' in carve.to_html(referenced, lowercase_heading_ids=True)
+        assert "</#" not in markdown
+    # The default engine id is NOT the anchor the Markdown target wrote, which
+    # is what makes the pair above a target rule rather than a coincidence.
+    assert 'id="Mixed-Case"' in carve.to_html("# Mixed Case\n")
+    assert 'id="mixed-case"' in carve.to_html(
+        "# Mixed Case\n", lowercase_heading_ids=True
+    )
 
 
 @pytest.mark.parametrize("render", NON_HTML_TARGETS, ids=lambda f: f.__name__)

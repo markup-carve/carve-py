@@ -7,6 +7,7 @@ engine reports rather than settling for "the text is not in the output".
 
 import json
 import pathlib
+import re
 
 import carve
 import pytest
@@ -281,3 +282,52 @@ def test_the_stub_declares_the_new_entry_point():
 
 def test_the_binding_exports_it():
     assert callable(carve.render_with_includes)
+
+
+# --- Colliding ids across two inclusions of one file (carve-rs#2311) --------
+
+
+@pytest.fixture
+def twice(tmp_path):
+    """A fragment carrying an EXPLICIT id and a reference to it.
+
+    The id has to be explicit. An attribute line above a block is the way to
+    attach one: `{#dup}` on a heading's own line is a trailing attribute and
+    never becomes an id, so a fragment written that way measures nothing.
+    """
+    root = tmp_path / "root"
+    write(root / "parts" / "frag.crv", "{#dup}\nA paragraph.\n\n[back](#dup)\n")
+    return root
+
+
+def _ids_and_hrefs(output):
+    return (
+        re.findall(r'id="([^"]+)"', output),
+        re.findall(r'href="(#[^"]*)"', output),
+    )
+
+
+def test_including_one_file_twice_renames_the_second_explicit_id(twice):
+    """Previously both copies kept `id="dup"`, so the document carried a
+    duplicate id and the second copy's own reference resolved to the FIRST
+    copy. Each later occurrence now takes its own least free suffix.
+    """
+    result = render(twice, "{{ parts/frag.crv }}\n\n{{ parts/frag.crv }}\n",
+                    source_path="main.crv")
+    ids, hrefs = _ids_and_hrefs(result["output"])
+    assert ids == ["dup", "dup-2"]
+    # The reference written in the same inclusion follows the rename, so the
+    # second copy points at itself rather than at the first.
+    assert hrefs == ["#dup", "#dup-2"]
+    assert "include-heading-id-rename" in rules(result)
+
+
+def test_a_single_inclusion_is_not_renamed(twice):
+    """Pairs with the test above: a suffix added unconditionally would satisfy
+    it, and would rewrite every id in a document with no collision at all.
+    """
+    result = render(twice, "{{ parts/frag.crv }}\n", source_path="main.crv")
+    ids, hrefs = _ids_and_hrefs(result["output"])
+    assert ids == ["dup"]
+    assert hrefs == ["#dup"]
+    assert "include-heading-id-rename" not in rules(result)

@@ -366,3 +366,84 @@ def test_fenced_render_derives_the_defaults_it_is_not_given():
     assert carve.to_html(source, extensions=["fenced-render"]).startswith(
         '<pre class="mermaid"'
     )
+
+
+def test_a_lone_pipe_carrying_row_attributes_does_not_crash():
+    """carve-rs#2341. Under the engine carve-py 0.1.6 shipped (carve-lang
+    0.1.7) this input panicked inside the table check, so a Python caller got a
+    `PanicException` and a backtrace on stderr instead of a value - a crash
+    reachable from the public API on input a user can type. The line is
+    paragraph text, so there is nothing to refuse.
+    """
+    for source in ("|{.r}", "|{#i}", "a\n|{.r}\n"):
+        assert "<p>" in carve.to_html(source)
+    assert carve.to_html("|{.r}") == "<p>|{.r}</p>"
+
+
+def test_every_exported_function_is_declared_in_the_stub():
+    """`carve.pyi` ships inside the wheel as `carve/__init__.pyi` beside a
+    `py.typed`, so it is the contract a consumer type-checks against, and a
+    function missing from it is invisible to them however well it works.
+
+    Nothing measured that. `test_the_stub_declares_the_new_entry_point` in
+    tests/test_includes.py names ONE function, so a second omission passes;
+    deleting `render_ast_json` from the stub left this suite at 205 passed.
+    Deriving the list from the registrations is what makes the next addition
+    fail instead of the one after it being noticed by an embedder.
+    """
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    registered = set(
+        re.findall(
+            r"wrap_pyfunction!\(\s*([A-Za-z_][A-Za-z0-9_]*)",
+            (root / "src" / "lib.rs").read_text(encoding="utf-8"),
+        )
+    )
+    assert registered, "no #[pyfunction] registrations found; this check moved"
+
+    stub = (root / "carve.pyi").read_text(encoding="utf-8")
+    declared = set(re.findall(r"^def ([A-Za-z_][A-Za-z0-9_]*)\(", stub, re.M))
+
+    assert registered - declared == set(), (
+        "exported but absent from carve.pyi: "
+        + ", ".join(sorted(registered - declared))
+    )
+    # The module really exposes each one, so the stub is not describing a
+    # function that no longer exists.
+    for name in sorted(registered):
+        assert callable(getattr(carve, name)), name
+
+
+def test_formatting_keeps_a_denied_scheme_exactly_as_authored():
+    """carve-rs#2248. Formatting must not change the destination it parsed. The
+    previous engine percent-encoded the parentheses of a denied scheme, so
+    `carve fmt` rewrote the author's URL while the HTML target was already
+    blanking it: two different answers to one destination.
+
+    The pairing is the point. Canonical Carve preserves, HTML filters.
+    """
+    for source in (
+        "[x](javascript:alert(1))\n",
+        "![x](javascript:alert(1))\n",
+        "<javascript:alert(1)>\n",
+    ):
+        assert carve.to_carve(source) == source, source
+        assert "%28" not in carve.to_carve(source)
+
+    # The render still refuses the destination, so preserving it in the source
+    # is not a hole.
+    assert carve.to_html("[x](javascript:alert(1))\n") == '<p><a href="">x</a></p>'
+    assert carve.to_html("![x](javascript:alert(1))\n") == '<img src="" alt="x">'
+
+
+def test_formatting_does_not_double_a_backslash_the_reparse_does_not_need():
+    """carve-rs#2224. A quoted attribute value, a link title and a reference
+    definition title each came back with `t\\zu` spelled `t\\\\zu`, so a
+    round-trip through the formatter grew an escape the reader discards.
+    """
+    assert carve.to_carve('{#i key="t\\zu"}\npara\n') == '{#i key="t\\zu"}\npara\n'
+    assert carve.to_carve('[x](u "t\\zu")\n') == '[x](u "t\\zu")\n'
+    # The definition moves to the foot of the document; the title does not change.
+    assert carve.to_carve('[a]: u "t\\zu"\n\n[a]\n') == '[a]\n\n[a]: u "t\\zu"\n'
