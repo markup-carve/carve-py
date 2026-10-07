@@ -414,3 +414,36 @@ def test_every_exported_function_is_declared_in_the_stub():
     # function that no longer exists.
     for name in sorted(registered):
         assert callable(getattr(carve, name)), name
+
+
+def test_formatting_keeps_a_denied_scheme_exactly_as_authored():
+    """carve-rs#2248. Formatting must not change the destination it parsed. The
+    previous engine percent-encoded the parentheses of a denied scheme, so
+    `carve fmt` rewrote the author's URL while the HTML target was already
+    blanking it: two different answers to one destination.
+
+    The pairing is the point. Canonical Carve preserves, HTML filters.
+    """
+    for source in (
+        "[x](javascript:alert(1))\n",
+        "![x](javascript:alert(1))\n",
+        "<javascript:alert(1)>\n",
+    ):
+        assert carve.to_carve(source) == source, source
+        assert "%28" not in carve.to_carve(source)
+
+    # The render still refuses the destination, so preserving it in the source
+    # is not a hole.
+    assert carve.to_html("[x](javascript:alert(1))\n") == '<p><a href="">x</a></p>'
+    assert carve.to_html("![x](javascript:alert(1))\n") == '<img src="" alt="x">'
+
+
+def test_formatting_does_not_double_a_backslash_the_reparse_does_not_need():
+    """carve-rs#2224. A quoted attribute value, a link title and a reference
+    definition title each came back with `t\\zu` spelled `t\\\\zu`, so a
+    round-trip through the formatter grew an escape the reader discards.
+    """
+    assert carve.to_carve('{#i key="t\\zu"}\npara\n') == '{#i key="t\\zu"}\npara\n'
+    assert carve.to_carve('[x](u "t\\zu")\n') == '[x](u "t\\zu")\n'
+    # The definition moves to the foot of the document; the title does not change.
+    assert carve.to_carve('[a]: u "t\\zu"\n\n[a]\n') == '[a]\n\n[a]: u "t\\zu"\n'

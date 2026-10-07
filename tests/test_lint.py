@@ -172,3 +172,24 @@ def test_the_fragment_check_skips_what_it_cannot_judge(link):
     """A bare `#` and `#top` are browser conventions, and a fragment on another
     document or an absolute URL names an id this document does not hold."""
     assert carve.lint("# Real Heading\n\n" + link + "\n") == []
+
+
+def test_a_case_only_crossref_near_miss_is_reported_and_names_the_id():
+    """`broken-crossref` is not new, but its trigger is. On the previous engine
+    `</#mixed-case>` RESOLVED to `Mixed-Case` and there was nothing to report;
+    cross-references now compare case exactly (carve-rs#2320), so the same
+    document carries a broken reference and the rule has to say which id was
+    meant.
+
+    Paired with the two cases around it: a reference to nothing reported on
+    both engines, and an exact match reported on neither, so what moved is the
+    middle case and not the rule's existence.
+    """
+    absent = carve.lint("# H\n\n</#totally-absent>\n")
+    assert [w["rule"] for w in absent] == ["broken-crossref"]
+
+    near = carve.lint("# Mixed Case\n\n</#mixed-case>\n")
+    assert [w["rule"] for w in near] == ["broken-crossref"]
+    assert '"Mixed-Case"' in near[0]["message"]
+
+    assert carve.lint("# Mixed Case\n\n</#Mixed-Case>\n") == []
