@@ -66,6 +66,49 @@ jobs:
             --engine carve-rs --github --max-age-days 14 \
             --form cargo --manifest Cargo.toml --lock Cargo.lock
 
+      # THE AGE WINDOW IS NOT A GATE, and nothing else here covered it
+      # (markup-carve/carve-py#88). Between a carve-rs release and fourteen days
+      # later, the step above passes however far behind the pin is, and the
+      # corpus gate cannot help: it is aimed at the spec commit THE PINNED
+      # ENGINE PINS, so a stale pin and a stale spec agree with each other. The
+      # pin sat at carve-lang 0.1.7 while 0.1.8 was published, both gates green,
+      # 7.8 of the 14 days still to run, and the wheel rendered 30 of 2225
+      # corpus documents by superseded rules.
+      #
+      # A SIBLING FLOOR closes that window without the problems of the
+      # alternatives. "Behind carve-rs main" is red from the moment any pull
+      # request opens there and is not clearable here; a drift count compared
+      # against the previous run needs stored state. A sibling's pin is a
+      # revision another binding of this same engine has already shipped
+      # against, it moves only when someone bumps it deliberately, and being
+      # behind it is cleared by the one action this step recommends.
+      #
+      # scripts/check-engine-floor.py is a VERBATIM copy of carve-wasm's, which
+      # is how scripts/pinned-spec-commit.py is already distributed across the
+      # bindings - the two are byte-identical, so a `diff` against either
+      # sibling is the drift check. Its own docstring carries the carve-wasm
+      # incident that produced it.
+      #
+      # --changelog is deliberately NOT passed. That option checks that the
+      # revision the [Unreleased] section quotes is the one pinned, and it
+      # reads backticked hex runs; this manifest pins a published version
+      # rather than a rev, so the option would find no claim to check and pass
+      # without measuring anything.
+      #
+      # Known limitation: a floor is silent when every binding is stale
+      # together. That residue stays on markup-carve/carve-py#88.
+      - name: Check out carve-rb
+        uses: actions/checkout@v4
+        with:
+          repository: markup-carve/carve-rb
+          path: carve-rb
+
+      - name: Check the pin against the sibling binding's floor
+        run: |
+          python3 scripts/check-engine-floor.py \
+            --engine carve-rs --manifest Cargo.toml --lock Cargo.lock \
+            --sibling-name carve-rb --sibling-manifest carve-rb/ext/carve/Cargo.toml
+
   # The guard runs on every OS the release workflow runs it on.
   #
   # CI here was ubuntu-only, so a script that works on Linux and fails on macOS
