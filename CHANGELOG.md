@@ -10,6 +10,9 @@ therefore get an entry of their own.
 
 - Add `render_ast_json` to validate interchange trees and write source through
   the native engine.
+- The engine is the published `carve-lang` 0.1.8 crate, up from 0.1.7. That
+  revision pins spec `c61b0d5f`, so the wheel renders the corpus by the rules
+  the spec declares at that commit rather than the ones 0.1.7 carried.
 
 ## [0.1.6] - 2026-09-29
 
