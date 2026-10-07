@@ -4,8 +4,12 @@ from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
 
 __version__: str
 
-def to_carve(source: str) -> str:
-    """Format Carve source into canonical Carve."""
+def to_carve(source: str, *, strict: bool = False) -> str:
+    """Format Carve source into canonical Carve.
+
+    With `strict`, a writer refusal raises `ValueError` instead of coming back
+    as the source as authored.
+    """
     ...
 
 def render_ast_json(source: str) -> str:

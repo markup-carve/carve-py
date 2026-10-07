@@ -73,6 +73,10 @@ carve.to_plain_text(source)
 carve.to_ansi(source, lowercase_heading_ids=True)
 carve.to_carve(source)
 
+# `strict` turns a writer refusal into a `ValueError` instead of returning the
+# source unchanged.
+carve.to_carve(source, strict=True)
+
 # Migration returns canonical Carve plus a machine-readable loss report.
 carve.from_html('<p>Hello <strong>world</strong></p>')
 carve.from_markdown('*em* and **strong**')
@@ -353,6 +357,24 @@ The string passed in `extensions=[...]` maps to a carve-rs extension:
 | `wikilinks`          | `[[wiki style]]` links                               |
 | `citations`          | citation references                                  |
 | `code-callouts`      | numbered callouts in fenced code blocks              |
+
+## Formatting source
+
+`carve.to_carve(source)` writes the engine's canonical spelling of a document.
+The writer can refuse a tree it cannot spell back, and by default that refusal
+comes back as the source as authored - the same value a document that was
+already canonical returns, so a caller cannot tell the two apart. Pass
+`strict=True` to get the refusal as a `ValueError`:
+
+```python
+try:
+    formatted = carve.to_carve(source, strict=True)
+except ValueError as refusal:
+    print(f"left as authored: {refusal}")
+```
+
+A tool that writes the result back to the file wants `strict=True`: without it,
+the one document that could not be formatted is reported as formatted.
 
 ## Write source from AST JSON
 
