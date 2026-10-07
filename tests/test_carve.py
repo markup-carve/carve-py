@@ -378,3 +378,39 @@ def test_a_lone_pipe_carrying_row_attributes_does_not_crash():
     for source in ("|{.r}", "|{#i}", "a\n|{.r}\n"):
         assert "<p>" in carve.to_html(source)
     assert carve.to_html("|{.r}") == "<p>|{.r}</p>"
+
+
+def test_every_exported_function_is_declared_in_the_stub():
+    """`carve.pyi` ships inside the wheel as `carve/__init__.pyi` beside a
+    `py.typed`, so it is the contract a consumer type-checks against, and a
+    function missing from it is invisible to them however well it works.
+
+    Nothing measured that. `test_the_stub_declares_the_new_entry_point` in
+    tests/test_includes.py names ONE function, so a second omission passes;
+    deleting `render_ast_json` from the stub left this suite at 205 passed.
+    Deriving the list from the registrations is what makes the next addition
+    fail instead of the one after it being noticed by an embedder.
+    """
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    registered = set(
+        re.findall(
+            r"wrap_pyfunction!\(\s*([A-Za-z_][A-Za-z0-9_]*)",
+            (root / "src" / "lib.rs").read_text(encoding="utf-8"),
+        )
+    )
+    assert registered, "no #[pyfunction] registrations found; this check moved"
+
+    stub = (root / "carve.pyi").read_text(encoding="utf-8")
+    declared = set(re.findall(r"^def ([A-Za-z_][A-Za-z0-9_]*)\(", stub, re.M))
+
+    assert registered - declared == set(), (
+        "exported but absent from carve.pyi: "
+        + ", ".join(sorted(registered - declared))
+    )
+    # The module really exposes each one, so the stub is not describing a
+    # function that no longer exists.
+    for name in sorted(registered):
+        assert callable(getattr(carve, name)), name
