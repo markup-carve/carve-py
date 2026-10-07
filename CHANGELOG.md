@@ -8,6 +8,8 @@ therefore get an entry of their own.
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-10-07
+
 - Add `render_ast_json` to validate interchange trees and write source through
   the native engine.
 - The engine is the published `carve-lang` 0.1.8 crate, up from 0.1.7. That
@@ -221,7 +223,8 @@ First release.
 - Ship abi3 wheels (`abi3-py38`), so one wheel per platform covers CPython 3.8+,
   with `carve.pyi` type stubs.
 
-[Unreleased]: https://github.com/markup-carve/carve-py/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/markup-carve/carve-py/compare/v0.1.7...HEAD
+[0.1.7]: https://github.com/markup-carve/carve-py/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/markup-carve/carve-py/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/markup-carve/carve-py/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/markup-carve/carve-py/compare/v0.1.3...v0.1.4
