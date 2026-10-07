@@ -12,12 +12,16 @@ name = "carve"
 crate-type = ["cdylib"]
 
 # IMPORTANT: do NOT set `panic = "abort"` anywhere (no `[profile.release]`
-# panic setting here, and none inherited from a workspace). PyO3 wraps every
-# Rust call this module exposes in catch_unwind to convert a Rust panic into a
-# Python exception; that conversion only works under `panic = "unwind"` (the
-# Cargo default). Setting `panic = "abort"` silently removes the safety net and
+# panic setting here, and none inherited from a workspace). Two separate pieces
+# turn a Rust panic into a Python exception a host can handle: `panic = "unwind"`
+# (the Cargo default) makes the panic unwindable at all, and `guard` in
+# src/lib.rs catches that unwind and raises `carve.EnginePanicError`. Without
+# `guard` the panic still reaches Python, since PyO3 catches it too, but as
+# `PanicException`, which derives from `BaseException` and so escapes
+# `except Exception`. Setting `panic = "abort"` removes the unwind entirely and
 # a panic would abort the host Python interpreter. The CI step
-# (scripts/check-panic-unwind.sh) enforces this.
+# (scripts/check-panic-unwind.sh) enforces the compile flag;
+# tests/test_panic_unwind.py covers the other half.
 
 [dependencies]
 pyo3 = { version = "0.27", features = ["abi3-py38", "extension-module"] }

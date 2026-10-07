@@ -4,13 +4,23 @@
 #
 # Regression guard for the FFI panic-safety net.
 #
-# PyO3 wraps every Rust call this extension exposes in catch_unwind, so a Rust
-# panic surfaces as a Python exception instead of aborting the host process.
-# That conversion ONLY works when the extension crate is compiled with
-# `panic = "unwind"` (the Cargo default). If anyone later adds
-# `panic = "abort"` to a tracked Cargo.toml (this crate or an inherited
-# workspace profile), catch_unwind is silently removed and a panic would abort
-# the Python interpreter.
+# A Rust panic in this extension unwinds, is caught, and is raised to Python as
+# `carve.EnginePanicError` - an Exception subclass a host can handle. Two
+# separate pieces produce that, and this script guards the first:
+#
+#   1. `panic = "unwind"` (the Cargo default) makes the panic unwindable at all,
+#      so catch_unwind can run and the panic report keeps its location and any
+#      RUST_BACKTRACE output.
+#   2. `guard` in src/lib.rs catches that unwind and converts it. Without it the
+#      panic still reaches Python - PyO3 catches it too - but as
+#      `PanicException`, which derives from `BaseException` and therefore
+#      escapes `except Exception` (markup-carve/carve-py#94).
+#      tests/test_panic_unwind.py covers that half.
+#
+# If anyone later adds `panic = "abort"` to a tracked Cargo.toml (this crate or
+# an inherited workspace profile), the unwind is silently removed: there is
+# nothing left to catch or convert, and a panic would abort the Python
+# interpreter.
 #
 # This script fails if any tracked Cargo.toml sets `panic = "abort"`.
 # It is intentionally cheap so it can gate every CI run.
@@ -41,8 +51,9 @@ fi
 if grep -nE '^[[:space:]]*panic[[:space:]]*=[[:space:]]*"abort"' "${cargo_tomls[@]}"; then
   echo >&2
   echo "ERROR: 'panic = \"abort\"' found in a tracked Cargo.toml." >&2
-  echo "PyO3 relies on catch_unwind (panic = \"unwind\") to turn Rust panics" >&2
-  echo "into Python exceptions; 'abort' would let a panic kill the host." >&2
+  echo "This extension relies on catch_unwind (panic = \"unwind\") to convert a" >&2
+  echo "Rust panic into a catchable carve.EnginePanicError; 'abort' removes the" >&2
+  echo "unwind entirely and would let a panic kill the host." >&2
   echo "Remove the 'panic = \"abort\"' setting." >&2
   exit 1
 fi

@@ -13,6 +13,14 @@ therefore get an entry of their own.
 - `to_carve` takes a keyword-only `strict`. With it, a writer refusal raises
   `ValueError` instead of returning the source as authored, which a caller
   could not tell from a document that was already canonical (#90).
+- An engine panic raises `carve.EnginePanicError`, an `Exception` subclass, so
+  the `except Exception` a host writes catches one. PyO3 raised its own
+  `PanicException`, which derives from `BaseException` and is not configurable,
+  so the handler missed it; the binding now converts the unwind itself. The
+  message carries the panic text and its location, and the stderr panic report
+  is unchanged. **Breaking only** for a caller that named
+  `pyo3_runtime.PanicException`: those calls now raise `EnginePanicError`
+  instead. `except BaseException` keeps working (#94).
 - Add `render_ast_json` to validate interchange trees and write source through
   the native engine.
 - The engine is the published `carve-lang` 0.1.8 crate, up from 0.1.7. That
