@@ -4,12 +4,23 @@ from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
 
 __version__: str
 
+class EnginePanicError(Exception):
+    """Raised when the Carve engine panics.
+
+    The message carries the panic text and its location in the engine source.
+    The document is not renderable; the interpreter is unaffected.
+    """
+
 def to_carve(source: str, *, strict: bool = False) -> str:
     """Format Carve source into canonical Carve.
 
     With `strict`, a writer refusal raises `ValueError` instead of coming back
     as the source as authored.
     """
+    ...
+
+def _panic_probe() -> str:
+    """Panic on purpose inside the extension; used only by the panic test."""
     ...
 
 def render_ast_json(source: str) -> str:
