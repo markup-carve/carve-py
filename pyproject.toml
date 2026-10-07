@@ -48,4 +48,5 @@ exclude = [
     ".gitignore",
     "scripts/**",
     "tests/**",
+    "tools/**",
 ]

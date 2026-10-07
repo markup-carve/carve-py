@@ -128,7 +128,7 @@ jobs:
           import tarfile
 
           archive = next(pathlib.Path("sdist").glob("*.tar.gz"))
-          forbidden = (".github/", ".gitattributes", ".gitignore", "scripts/", "tests/")
+          forbidden = (".github/", ".gitattributes", ".gitignore", "scripts/", "tests/", "tools/")
           with tarfile.open(archive) as package:
               files = [member.name.split("/", 1)[1] for member in package if "/" in member.name]
           leaked = [name for name in files if name in forbidden or name.startswith(forbidden)]
