@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-WORKFLOW = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "release.yml"
+WORKFLOW = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "release-build.yml"
 
 _JOB = re.compile(r"^  (?P<name>[a-z0-9-]+):$", re.MULTILINE)
 # A matrix entry's name is one token. A step's `- name:` is a sentence, and sits

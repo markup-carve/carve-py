@@ -1,0 +1,589 @@
+name: Release packages and assets
+
+on:
+  workflow_call:
+    inputs:
+      publish:
+        required: true
+        type: boolean
+      tag:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+      release_tag:
+        required: true
+        type: string
+      source_sha:
+        required: true
+        type: string
+      release_id:
+        required: true
+        type: string
+      release_body:
+        required: true
+        type: string
+      notes_digest:
+        required: true
+        type: string
+
+# Jobs carry an explicit timeout-minutes: without one GitHub applies a
+# 360-minute default, long enough for a stalled job to go unnoticed.
+
+jobs:
+  changes:
+    name: Release path changed
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      run: ${{ steps.diff.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+          ref: ${{ inputs.source_sha }}
+      - name: Expose the candidate tag locally
+        if: ${{ !inputs.publish }}
+        shell: bash
+        env:
+          CANDIDATE_TAG: ${{ inputs.tag }}
+        run: |
+          git tag "$CANDIDATE_TAG" "${{ inputs.source_sha }}"
+      - name: Compare against the base branch
+        id: diff
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
+          printf '%s\n' "$changed"
+          if printf '%s\n' "$changed" | grep -qxE '\.github/workflows/release\.yml|scripts/release-corpus-gate\.py|scripts/pinned-spec-commit\.py|Cargo\.toml|Cargo\.lock|pyproject\.toml'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Release path untouched: the build and gate jobs report success without running."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Runs before the three-OS wheel matrix, so a tag that disagrees with the
+  # packaged version costs seconds rather than a full build - and fails before
+  # the upload, the only moment it can still be fixed.
+  guard:
+    name: Check the tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # Both manifests, not just pyproject.toml. pyproject is what PyPI
+      # publishes; Cargo.toml is what `carve.__version__` reports, because the
+      # module exposes CARGO_PKG_VERSION. Checking only the first lets a release
+      # that bumped only the first publish a wheel naming one version and
+      # reporting another - the carve-js case, where an exported constant read
+      # 0.1.0 for three releases (markup-carve/carve-js#1074).
+      #
+      # tests/test_release_version.py checks the same pair, plus the changelog,
+      # on every CI run; this is the last chance to catch it.
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+      - name: Expose the candidate tag locally
+        if: ${{ !inputs.publish }}
+        shell: bash
+        env:
+          CANDIDATE_TAG: ${{ inputs.tag }}
+        run: |
+          git tag "$CANDIDATE_TAG" "${{ inputs.source_sha }}"
+      - name: The tag matches the packaged version
+        if: startsWith(format('refs/tags/{0}', inputs.tag), 'refs/tags/')
+        run: |
+          tag="${LANE_TAG#v}"
+          version="$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)"
+          if [ "$tag" != "$version" ]; then
+            echo "tag ${LANE_TAG} does not match project version ${version}" >&2
+            exit 1
+          fi
+          crate="$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)"
+          if [ "$tag" != "$crate" ]; then
+            echo "tag ${LANE_TAG} does not match Cargo.toml version ${crate}, which is what carve.__version__ reports" >&2
+            exit 1
+          fi
+
+  # ONE ENTRY PER WHEEL, and every entry is BUILT AND GATED ON ITS OWN
+  # ARCHITECTURE.
+  #
+  # The Intel macOS entry is `macos-15-intel` rather than `macos-13`, which was
+  # tried first and queued for 26 minutes with started=null while every other
+  # job in the run finished. GitHub's runner-images README no longer lists
+  # macos-13 at all; x64 macOS is macos-15-intel (and macos-26-intel) now.
+  #
+  # If that label ever stops being served too, the entry comes OUT rather than
+  # being cross-built: the corpus gate runs the engine inside the wheel, so a
+  # wheel with no machine to run it on is a wheel with no gate, and an Intel Mac
+  # falling back to the sdist is the smaller loss. tests/test_release_matrix.py
+  # holds the build matrix and the gate matrices to each other, so an entry
+  # cannot be added back without its gate. That is the constraint the shape follows from: a wheel is
+  # only installable where it was built for, and the corpus gate below runs the
+  # engine inside the wheel - so a cross-built artifact nobody can execute is an
+  # artifact nobody can gate, and this repository does not publish those.
+  #
+  # What was missing, measured on PyPI against carve-lang 0.1.1: three wheels
+  # (manylinux x86_64, macOS arm64, Windows amd64). Everything else fell back to
+  # the sdist, which needs a Rust toolchain at install time - so `pip install
+  # carve-lang` failed on Alpine (the usual docs-CI base image), on ARM Linux
+  # (Graviton, ARM runners, Docker on Apple Silicon) and on an Intel Mac, in
+  # each case with a compiler error rather than a missing-wheel message.
+  # Zensical, the host this binding is most often installed beside, ships
+  # twelve.
+  build-wheels:
+    name: Build wheel (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    needs: [guard, changes]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            runner: ubuntu-latest
+            manylinux: auto
+          - name: linux-aarch64
+            runner: ubuntu-24.04-arm
+            manylinux: auto
+          - name: linux-musl-x86_64
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            manylinux: musllinux_1_2
+          - name: linux-musl-aarch64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            manylinux: musllinux_1_2
+          - name: macos-arm64
+            runner: macos-latest
+          - name: macos-x86_64
+            runner: macos-15-intel
+          - name: windows-x86_64
+            runner: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+      - name: Expose the candidate tag locally
+        if: ${{ !inputs.publish }}
+        shell: bash
+        env:
+          CANDIDATE_TAG: ${{ inputs.tag }}
+        run: |
+          git tag "$CANDIDATE_TAG" "${{ inputs.source_sha }}"
+      - name: Guard against panic = "abort"
+        if: needs.changes.outputs.run == 'true' && runner.os != 'Windows'
+        run: bash scripts/check-panic-unwind.sh
+
+      - name: Build wheels (abi3)
+        if: needs.changes.outputs.run == 'true'
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --features pyo3/extension-module --out dist
+          # abi3-py38 feature is set in pyproject.toml via [tool.maturin].
+          # One wheel covers Python 3.8+ per PEP 384.
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+
+      - uses: actions/upload-artifact@v4
+        if: needs.changes.outputs.run == 'true'
+        with:
+          name: wheels-${{ matrix.name }}-${{ inputs.publish && 'publish' || 'check' }}
+          path: dist/
+
+  build-sdist:
+    name: Build source distribution
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [guard, changes]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+      - name: Expose the candidate tag locally
+        if: ${{ !inputs.publish }}
+        shell: bash
+        env:
+          CANDIDATE_TAG: ${{ inputs.tag }}
+        run: |
+          git tag "$CANDIDATE_TAG" "${{ inputs.source_sha }}"
+      - name: Build sdist
+        if: needs.changes.outputs.run == 'true'
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+
+      - uses: actions/upload-artifact@v4
+        if: needs.changes.outputs.run == 'true'
+        with:
+          name: sdist-${{ inputs.publish && 'publish' || 'check' }}
+          path: dist/
+
+  # THE ONLY JOB ON THIS PATH THAT ASKS WHETHER THE ARTIFACT IS CORRECT.
+  #
+  # Everything above is paperwork: the tag matches two manifests, no crate sets
+  # panic = "abort", the wheels built. None of it compares a single byte of
+  # output, so a wheel carrying an engine that renders the spec wrongly passed
+  # every check and uploaded - the "check that cannot fail" class in
+  # markup-carve/carve#755, on the one path where it cannot be undone, because
+  # PyPI indexes within minutes and a yank is itself a public event.
+  #
+  # Measured, not feared: this repository's pin sat on 98de787 rendering 75 of
+  # the spec's 1241 documents wrongly, and the sibling binding carve-rb had a
+  # GREEN last `main` run over an artifact that got 24 of them wrong.
+  #
+  # It downloads the wheels the matrix just built rather than rebuilding, so
+  # what is measured is what `publish` uploads, and it runs them from a clean
+  # virtualenv rather than the checkout, because the engine is a compiled
+  # `carve.abi3.so` and a source-tree run would exercise a different binary.
+  # scripts/release-corpus-gate.py refuses an import that does not resolve into
+  # the interpreter's site-packages -- which is what separates an installed
+  # artifact from a source-tree or editable import, and not "outside the
+  # checkout", because the virtualenv below lives in the workspace -- and then
+  # byte-compares every `carve/` member of the wheel against the installed copy,
+  # so a gate pointed at the wrong artifact fails rather than reporting on it.
+  #
+  # It gates rather than reports. `publish` needs this job, so the upload is
+  # unreachable when it exits non-zero. The sibling framework packages
+  # (laravel-carve, symfony-carve, shopware-carve) have the identical
+  # 1241-document comparison running on `schedule` only, printing divergence as
+  # a warning and exiting 0 - green everywhere while shipping an engine that
+  # renders 15.5 percent of the corpus differently.
+  #
+  # WHAT IT DOES NOT COVER: the sdist. `publish` uploads that too, and it is
+  # source rather than a built engine, so the only way to measure it is to build
+  # it - which produces a different artifact from the one uploaded and would be
+  # a gate over its own rebuild. The wheels are what carry the engine, and all
+  # three of them are covered here, each on its own platform because a wheel is
+  # only installable on the platform it was built for.
+  corpus-gate:
+    name: Corpus through the built wheel (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    needs: [build-wheels, changes]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            runner: ubuntu-latest
+          - name: linux-aarch64
+            runner: ubuntu-24.04-arm
+          - name: macos-arm64
+            runner: macos-latest
+          - name: macos-x86_64
+            runner: macos-15-intel
+          - name: windows-x86_64
+            runner: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+      - name: Expose the candidate tag locally
+        if: ${{ !inputs.publish }}
+        shell: bash
+        env:
+          CANDIDATE_TAG: ${{ inputs.tag }}
+        run: |
+          git tag "$CANDIDATE_TAG" "${{ inputs.source_sha }}"
+      - name: Check out carve-rs
+        if: needs.changes.outputs.run == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: markup-carve/carve-rs
+          path: carve-rs
+          # fetch-depth: 0 so the pinned revision can be read as a tree. A
+          # shallow clone has the tip's tree and nothing else, and the pin is
+          # deliberately not required to be the tip.
+          fetch-depth: 0
+
+      # Before the resolve step, not after the spec checkout: the resolver needs
+      # tomllib (3.11+), and the Windows runner's preinstalled interpreter is
+      # older and is not reliably on PATH as `python3`. setup-python gives every
+      # runner the same `python`.
+      - uses: actions/setup-python@v5
+        if: needs.changes.outputs.run == 'true'
+        with:
+          python-version: '3.12'
+
+      - name: Resolve the spec commit the pinned engine pins
+        if: needs.changes.outputs.run == 'true'
+        id: pin
+        shell: bash
+        run: |
+          spec="$(python scripts/pinned-spec-commit.py \
+            --engine carve-rs --manifest Cargo.toml --lock Cargo.lock)"
+          echo "spec=$spec" >> "$GITHUB_OUTPUT"
+
+      # The corpus is generated from resources/examples/*.md in the same
+      # checkout, and tests/corpus_population.py reads those pages to derive how
+      # many documents there should be. Both come from this one clone.
+      - name: Check out the spec corpus that engine was written against
+        if: needs.changes.outputs.run == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: markup-carve/carve
+          ref: ${{ steps.pin.outputs.spec }}
+          path: spec
+
+      - name: Download the wheel this release would publish
+        if: needs.changes.outputs.run == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: wheels-${{ matrix.name }}-${{ inputs.publish && 'publish' || 'check' }}
+          path: dist
+
+      - name: Run the spec corpus through it
+        if: needs.changes.outputs.run == 'true'
+        shell: bash
+        # Not $PWD: under Git Bash on the Windows runner that is a POSIX path
+        # (/d/a/...) which Python does not resolve, so the corpus would look
+        # absent. github.workspace is native on all three runners.
+        env:
+          CARVE_SPEC_CORPUS: ${{ github.workspace }}/spec/tests/corpus
+        run: |
+          set -euo pipefail
+
+          # Exactly one wheel, or the gate does not know which artifact it is
+          # speaking about. Two would install one and certify the other.
+          count="$(ls dist/*.whl | wc -l | tr -d ' ')"
+          if [ "$count" != "1" ]; then
+            echo "expected exactly one wheel in dist/, found ${count}:" >&2
+            ls -l dist/ >&2
+            exit 1
+          fi
+          wheel="$(ls dist/*.whl)"
+
+          # A clean virtualenv, so the import cannot resolve to anything the
+          # checkout or the runner image already had.
+          python -m venv .gate
+          if [ -x .gate/bin/python ]; then gate=.gate/bin/python; else gate=.gate/Scripts/python.exe; fi
+          "$gate" -m pip install --quiet --upgrade pip
+          "$gate" -m pip install --quiet pytest
+          "$gate" -m pip install --quiet --no-index --find-links dist --force-reinstall carve-lang
+
+          "$gate" scripts/release-corpus-gate.py --wheel "$wheel" --corpus spec/tests/corpus
+
+          # The rest of the suite against the SAME installed wheel. The gate
+          # above is the release blocker; this adds the AST walk, the non-HTML
+          # targets and the version agreement, all measured through the artifact
+          # rather than through a rebuild.
+          "$gate" -m pytest -q tests
+
+  # THE SAME GATE, FOR THE TWO WHEELS THAT CANNOT RUN ON THEIR OWN RUNNER.
+  #
+  # A musl wheel is built on a glibc runner - there is no Alpine runner - so it
+  # cannot be installed where it was built. It is gated in an Alpine container
+  # on that same runner, which gives it the libc it is for on the architecture
+  # it is for.
+  #
+  # Through `docker run` rather than a job-level `container:`, deliberately. The
+  # runner injects its own Node into a container to execute JavaScript actions,
+  # and that Node is built against glibc, so `actions/checkout` fails on Alpine
+  # before any wheel is touched. Here every action runs on the host and only the
+  # gate itself runs inside the container, over the same workspace.
+  corpus-gate-musl:
+    name: Corpus through the built wheel (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    needs: [build-wheels, changes]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-musl-x86_64
+            runner: ubuntu-latest
+          - name: linux-musl-aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+      - name: Expose the candidate tag locally
+        if: ${{ !inputs.publish }}
+        shell: bash
+        env:
+          CANDIDATE_TAG: ${{ inputs.tag }}
+        run: |
+          git tag "$CANDIDATE_TAG" "${{ inputs.source_sha }}"
+      - uses: actions/setup-python@v5
+        if: needs.changes.outputs.run == 'true'
+        with:
+          python-version: '3.12'
+
+      # Same pinning rule as the native gate: the spec the ENGINE INSIDE THIS
+      # WHEEL was written against, not spec main, which no wheel can satisfy on
+      # the day it is built.
+      - name: Check out carve-rs
+        if: needs.changes.outputs.run == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: markup-carve/carve-rs
+          path: carve-rs
+          fetch-depth: 0
+
+      - name: Resolve the spec commit the pinned engine pins
+        if: needs.changes.outputs.run == 'true'
+        id: pin
+        shell: bash
+        run: |
+          spec="$(python scripts/pinned-spec-commit.py \
+            --engine carve-rs --manifest Cargo.toml --lock Cargo.lock)"
+          echo "spec=$spec" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the spec corpus that engine was written against
+        if: needs.changes.outputs.run == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: markup-carve/carve
+          ref: ${{ steps.pin.outputs.spec }}
+          path: spec
+
+      - name: Download the wheel this release would publish
+        if: needs.changes.outputs.run == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: wheels-${{ matrix.name }}-${{ inputs.publish && 'publish' || 'check' }}
+          path: dist
+
+      - name: Run the spec corpus through it, on musl
+        if: needs.changes.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          count="$(ls dist/*.whl | wc -l | tr -d ' ')"
+          if [ "$count" != "1" ]; then
+            echo "expected exactly one wheel in dist/, found ${count}:" >&2
+            ls -l dist/ >&2
+            exit 1
+          fi
+          wheel="$(ls dist/*.whl)"
+
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/work" -w /work \
+            -e "CARVE_SPEC_CORPUS=/work/spec/tests/corpus" \
+            -e "WHEEL=${wheel}" \
+            python:3.12-alpine sh -euc '
+              python -m venv .gate
+              .gate/bin/pip install --quiet --upgrade pip
+              .gate/bin/pip install --quiet pytest
+              .gate/bin/pip install --quiet --no-index --find-links dist \
+                --force-reinstall carve-lang
+              .gate/bin/python scripts/release-corpus-gate.py \
+                --wheel "$WHEEL" --corpus spec/tests/corpus
+              .gate/bin/python -m pytest -q tests
+            '
+
+  publish:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # corpus-gate is what makes this unreachable over a wrong artifact. Ordering
+    # the check inside this job would not: a step that runs before the upload in
+    # the same job is one `continue-on-error`, one reordering or one `if:` away
+    # from being advisory, and the upload would still have the artifact in hand.
+    needs: [build-wheels, build-sdist, corpus-gate, corpus-gate-musl]
+    # A pull request and a dispatch run everything above this job and stop here.
+    # The event matters as much as the ref: a dispatch can be aimed AT A TAG, in
+    # which case github.ref is a tag ref too, and a run meant to test the path
+    # would upload.
+    if: true && startsWith(format('refs/tags/{0}', inputs.tag), 'refs/tags/')
+    permissions:
+      # `write`, not `read`, and the gate below is the whole reason: a DRAFT
+      # release is invisible to a caller without push access, so under
+      # `contents: read` the listing comes back empty and the gate reports
+      # "no release" for a draft that is sitting right there with notes in
+      # it. See markup-carve/carve-wasm#80.
+      contents: write
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source_sha }}
+
+          fetch-depth: 0
+      - name: Verify approval and checked tag before publishing
+        working-directory: ${{ github.workspace }}
+        if: ${{ inputs.publish }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_SHA: ${{ inputs.source_sha }}
+          RELEASE_NOTES_DIGEST: ${{ inputs.notes_digest }}
+        run: python .github/scripts/release-lane.py permit
+      - name: Expose the candidate tag locally
+        if: ${{ !inputs.publish }}
+        shell: bash
+        env:
+          CANDIDATE_TAG: ${{ inputs.tag }}
+        run: |
+          git tag "$CANDIDATE_TAG" "${{ inputs.source_sha }}"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      # The draft must describe the tagged changelog section before publishing.
+      # Relative changelog links resolve against this tag in the release body.
+      # rehearse-release-notes.yml runs the same script against a draft.
+      - name: The release notes match this tag's changelog
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/run-release-notes-gate.sh "$LANE_TAG"
+
+      # The secrets context is not readable from a step-level `if`, so the path
+      # is decided here instead. This step only reports whether the secret is
+      # set; the token itself reaches no other step, and in particular no
+      # third-party action.
+      - name: Decide the publish path
+        id: auth
+        env:
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          if [ -n "$PYPI_API_TOKEN" ]; then
+            echo "mode=token" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=oidc" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      # The API token is the bootstrap path only. Once `carve-lang` exists on
+      # PyPI, configure a trusted publisher there and delete the secret; the
+      # step below then takes over and no credential is stored anywhere.
+          pattern: "*-${{ inputs.publish && 'publish' || 'check' }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pypi-checked-distributions-${{ inputs.publish && 'publish' || 'check' }}
+          path: dist/
+          if-no-files-found: error
+permissions:
+  contents: write
+  actions: read
+  id-token: write
+env:
+  LANE_TAG: ${{ inputs.tag }}
+  LANE_REF: ${{ format('refs/tags/{0}', inputs.tag) }}
+  LANE_REF_TYPE: tag
+  LANE_PUBLISH: ${{ inputs.publish }}

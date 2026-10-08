@@ -1,0 +1,27 @@
+{
+  "workflow": ".github/workflows/release.yml",
+  "publisher": ".github/workflows/release-build.yml",
+  "publisher_environments": [
+    "pypi"
+  ],
+  "registries": {
+    "pypi": "carve-lang"
+  },
+  "assets": [],
+  "versions": [
+    {
+      "path": "pyproject.toml",
+      "field": [
+        "project",
+        "version"
+      ]
+    },
+    {
+      "path": "Cargo.toml",
+      "field": [
+        "package",
+        "version"
+      ]
+    }
+  ]
+}
