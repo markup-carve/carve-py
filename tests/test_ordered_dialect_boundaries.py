@@ -26,3 +26,16 @@ def test_article_retains_raw_payload_as_code():
     assert carve.to_html("``` =html\n<b>x</b>\n```", profile="article") == (
         '<pre><code class="language-html">&lt;b&gt;x&lt;/b&gt;\n</code></pre>'
     )
+
+
+def test_markdown_retains_authored_ordered_delimiters():
+    cases = json.loads(
+        (Path(__file__).parent / "fixtures" / "markdown-ordered-delimiters.json").read_text(encoding="utf-8")
+    )
+    assert len(cases) == 3
+    for case in cases:
+        imported = carve.from_markdown(case["markdown"])
+        assert imported["value"] == case["source"], case["name"]
+        assert carve.to_html(imported["value"]).rstrip("\n") == case["html"], case["name"]
+        assert imported["report"]["diagnostics"]
+        assert all(row["fidelity"] == "preserved" for row in imported["report"]["diagnostics"])

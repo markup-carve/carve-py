@@ -8,13 +8,13 @@ therefore get an entry of their own.
 
 ## [Unreleased]
 
-- Pin Rust engine `675edf58` for current spec conformance.
+- Pin Rust engine `889e916f` for current spec conformance.
 
 - Adjacent alphabetic and Roman ordered lists stay separate through HTML import and formatting. Three blank lines end dialect lookahead.
 
 - Under the article profile, denied raw blocks become code blocks that retain their escaped payload.
 
-- Ordered lists retain their authored delimiter in HTML as `data-delim`. Markdown import preserves trailing form feeds and vertical tabs. Braced closers stay inside their bracket and code scopes.
+- Ordered lists retain their authored delimiter in HTML as `data-delim`. Markdown import keeps `)` list delimiters and reports their fidelity as preserved. Markdown import preserves trailing form feeds and vertical tabs. Braced closers stay inside their bracket and code scopes.
 
 - **Breaking:** Engine compatibility: image alt text and quoted include paths decode ASCII punctuation escapes; escape a literal backslash twice. Include rename warnings use `include-id-rename` instead of `include-heading-id-rename`.
 
