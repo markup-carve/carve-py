@@ -475,7 +475,13 @@ jobs:
     # the check inside this job would not: a step that runs before the upload in
     # the same job is one `continue-on-error`, one reordering or one `if:` away
     # from being advisory, and the upload would still have the artifact in hand.
-    needs: [build-wheels, build-sdist, corpus-gate, corpus-gate-musl]
+    #
+    # `changes` and `guard` are named here even though `build-wheels` already
+    # needs both. A transitive dependency is not a gate anyone can read off this
+    # job, and `needs:` is the only thing that holds across an edit: moving the
+    # wheel matrix off `guard` would silently take the version check out of the
+    # release path while the approval still looked like it gated everything.
+    needs: [changes, guard, build-wheels, build-sdist, corpus-gate, corpus-gate-musl]
     # Pull requests and empty dispatches stop here.
     # A dispatch with a version publishes after approval.
     if: ((github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/') || inputs.version != '')) ||
