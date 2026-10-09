@@ -319,7 +319,7 @@ def test_including_one_file_twice_renames_the_second_explicit_id(twice):
     # The reference written in the same inclusion follows the rename, so the
     # second copy points at itself rather than at the first.
     assert hrefs == ["#dup", "#dup-2"]
-    assert "include-heading-id-rename" in rules(result)
+    assert "include-id-rename" in rules(result)
 
 
 def test_a_single_inclusion_is_not_renamed(twice):
@@ -330,4 +330,4 @@ def test_a_single_inclusion_is_not_renamed(twice):
     ids, hrefs = _ids_and_hrefs(result["output"])
     assert ids == ["dup"]
     assert hrefs == ["#dup"]
-    assert "include-heading-id-rename" not in rules(result)
+    assert "include-id-rename" not in rules(result)

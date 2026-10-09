@@ -28,12 +28,15 @@ def render_ast_json(source: str) -> str:
     ...
 
 class MigrationDiagnostic(TypedDict, total=False):
+    fidelity: str
+    confidence: str
     code: str
     message: str
     severity: str
     path: str
 
 class MigrationReport(TypedDict, total=False):
+    schema_version: int
     mode: str
     adapter: str
     source_format: str
