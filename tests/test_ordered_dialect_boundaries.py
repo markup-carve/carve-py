@@ -6,7 +6,7 @@ import pytest
 
 
 CASES = json.loads(
-    (Path(__file__).parent / "fixtures" / "ordered-dialect-boundaries.json").read_text()
+    (Path(__file__).parent / "fixtures" / "ordered-dialect-boundaries.json").read_text(encoding="utf-8")
 )
 assert len(CASES) == 17
 
