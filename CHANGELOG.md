@@ -8,6 +8,8 @@ therefore get an entry of their own.
 
 ## [Unreleased]
 
+- Pin Rust engine `675edf58` for ordered-list boundary preservation, raw-block profile fallback and the 2,230-example core corpus.
+
 - **Breaking:** Engine compatibility: image alt text and quoted include paths decode ASCII punctuation escapes; escape a literal backslash twice. Include rename warnings use `include-id-rename` instead of `include-heading-id-rename`.
 
 - **Breaking:** Markdown import reports contain construct assessments and loss diagnostics. Filter on `severity` or `fidelity` rather than treating every nonempty report as a loss. Both HTML and Markdown reports include `schema_version` and `source_format`, and their diagnostics retain fidelity and confidence.
