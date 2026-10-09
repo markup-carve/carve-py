@@ -32,7 +32,7 @@ pyo3 = { version = "0.27", features = ["abi3-py38", "extension-module"] }
 # `carve-lang` (the name `carve` was taken on crates.io).
 #
 # scripts/pinned-spec-commit.py resolves the exact engine revision to its spec corpus.
-carve_rs = { package = "carve-lang", git = "https://github.com/markup-carve/carve-rs", rev = "ed5581b19b4cf840dc625a1d25b7184d273aa406" }
+carve_rs = { package = "carve-lang", git = "https://github.com/markup-carve/carve-rs", rev = "889e916f62dd9d51d743b544a83d04dace2d924c" }
 #
 # For local development against a sibling checkout, swap the line above for a
 # path dependency:
