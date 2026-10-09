@@ -22,6 +22,35 @@ def test_multiple_pairs_and_literal_fences(tmp_path):
         require_whole_corpus(corpus, 1, "truncated")
 
 
+THREE_PAIRS = """::: compare
+```carve
+one
+```
+```html
+<p>one</p>
+```
+````carve
+```carve
+literal, not a pair
+```
+````
+```html
+<p>two</p>
+```
+```carve
+three
+```
+```html
+<p>three</p>
+```
+:::
+"""
+
+
+def test_one_block_holding_three_pairs(tmp_path):
+    assert declared_corpus_size(source_tree(tmp_path, THREE_PAIRS)) == 3
+
+
 @pytest.mark.parametrize("source", [
     "::: compare\n```carve\nx\n```\n:::\n",
     "::: compare\n```carve\nx\n```\n```html\nx\n```\n",

@@ -37,8 +37,8 @@ FOUR PROPERTIES, each of which some sibling gate is missing.
 
 3. IT ASSERTS THE POPULATION, DERIVED. A runner that finds 3 documents and
    matches 3 of them prints a clean verdict. The expected count comes from
-   `tests/corpus_population.py`, which counts the `::: compare` blocks the spec's
-   example pages DECLARE - the corpus's source rather than the corpus, so
+   `tests/corpus_population.py`, which counts every `carve` fence inside the
+   `::: compare` blocks the spec's example pages DECLARE - the corpus's source rather than the corpus, so
    emptying the corpus moves one side only. It is imported rather than
    reimplemented: this package already carried three hand-written floors that
    disagreed with each other, and a naive grep for the same blocks returns 1049
