@@ -53,10 +53,9 @@ def declared_corpus_size(corpus_dir):
 
     ``corpus_dir`` is ``CARVE_SPEC_CORPUS``, i.e. ``<spec>/tests/corpus``.
 
-    The scan mirrors the generator's state machine rather than grepping: a
-    ``::: compare`` line inside an already-open compare block is content, not a
-    second pair, and the generator closes a block on a bare marker line.
-    Mirroring keeps the two counts equal by construction instead of by luck.
+    Count Carve and HTML fences independently of generated files. Each
+    compare block must contain equal, nonzero counts. Literal fenced content
+    cannot open or close a compare block.
     """
     examples_dir = pathlib.Path(corpus_dir).parent.parent / "resources" / "examples"
     declared = 0
@@ -72,15 +71,33 @@ def declared_corpus_size(corpus_dir):
                 "pages; if the spec moved them, this helper has to move with them"
             )
         marker = None
-        for raw_line in path.read_text(encoding="utf-8").split("\n"):
-            line = raw_line.strip()
+        fence = None
+        counts = {"carve": 0, "html": 0}
+        for line in path.read_text(encoding="utf-8").split("\n"):
+            if fence is not None:
+                if line.startswith(fence) and not line[len(fence):].strip():
+                    fence = None
+                continue
+            opening = re.match(r"^(`{3,})(.*)$", line)
+            if opening:
+                fence = opening.group(1)
+                language = opening.group(2).strip()
+                if marker is not None and language in counts:
+                    counts[language] += 1
+                continue
+            trimmed = line.strip()
             if marker is not None:
-                if line == marker:
+                if trimmed == marker:
+                    assert counts["carve"] == counts["html"] and counts["carve"] > 0, (
+                        f"unpaired or empty compare block in {path}: {counts}"
+                    )
+                    declared += counts["carve"]
                     marker = None
                 continue
-            if _COMPARE_OPEN.match(line):
-                declared += 1
-                marker = _MARKER_RUN.match(line).group(0)
+            if _COMPARE_OPEN.match(trimmed):
+                marker = _MARKER_RUN.match(trimmed).group(0)
+                counts = {"carve": 0, "html": 0}
+        assert marker is None and fence is None, f"unclosed compare block or fence in {path}"
     if declared == 0:
         pytest.fail(
             f"the corpus source pages under {examples_dir} declare no ::: compare blocks "
@@ -104,7 +121,7 @@ def require_whole_corpus(corpus_dir, got, what):
     assert got == declared, (
         f"{what}: {got}, but the spec's example pages declare {declared}. Every "
         "::: compare block in resources/examples/{core,extensions,edge-cases}.md becomes "
-        f"one corpus pair, so a difference means the corpus at {corpus_dir} is not the one "
+        f"its declared fence pairs, so a difference means the corpus at {corpus_dir} is not the one "
         "those pages describe - a truncated or stale checkout, a wrong CARVE_SPEC_CORPUS, "
         "or a corpus that needs regenerating (npm run corpus:build in the spec repository). "
         "It does not mean this run was clean."

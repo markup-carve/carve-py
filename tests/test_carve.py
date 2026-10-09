@@ -165,13 +165,43 @@ def test_to_carve():
 def test_import_html_and_markdown_with_reports():
     html = carve.from_html('<p>Hello <strong>world</strong></p>')
     assert html["value"] == "Hello *world*\n"
-    assert html["report"] == {"mode": "safe", "adapter": "generic", "diagnostics": []}
+    assert html["report"] == {"schema_version": 2, "source_format": "html", "mode": "safe", "adapter": "generic", "diagnostics": []}
 
     markdown = carve.from_markdown("*em* and **strong**")
-    assert markdown == {
-        "value": "/em/ and *strong*\n",
-        "report": {"source_format": "markdown", "diagnostics": []},
-    }
+    assert markdown["value"] == "/em/ and *strong*\n"
+    assert markdown["report"]["schema_version"] == 2
+    assert markdown["report"]["source_format"] == "markdown"
+    assert markdown["report"]["diagnostics"]
+    assert all(row["confidence"] == "exact" for row in markdown["report"]["diagnostics"])
+    assert not any(row["code"] == "fidelity-unverified" for row in markdown["report"]["diagnostics"])
+
+
+def test_markdown_import_preserves_exact_losses():
+    result = carve.from_markdown("1. [ ] ordered task\n")
+    loss = next(row for row in result["report"]["diagnostics"] if row["code"] == "structure-unspellable")
+    assert loss["severity"] == "warning"
+    assert loss["fidelity"] == "dropped"
+    assert loss["confidence"] == "exact"
+    assert loss["message"]
+    assert loss["path"] == "line:1"
+
+
+def test_html_import_preserves_fidelity_classification():
+    result = carve.from_html('<p onclick="alert(1)">hello</p>')
+    assert result["report"]["schema_version"] == 2
+    assert result["report"]["source_format"] == "html"
+    assert len(result["report"]["diagnostics"]) == 1
+    row = result["report"]["diagnostics"][0]
+    assert row["code"] == "attribute-dropped"
+    assert row["fidelity"] == "dropped"
+    assert row["confidence"] == "exact"
+    assert row["path"] == "/p[1]"
+
+
+def test_markdown_depth_refusal_is_a_value_error():
+    with pytest.raises(ValueError, match="Markdown import failed"):
+        carve.from_markdown("> " * 512 + "text\n")
+    assert carve.to_html("after refusal") == "<p>after refusal</p>"
 
 
 # --- Engine language surface ---------------------------------------------

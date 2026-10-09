@@ -1071,7 +1071,7 @@ fn from_html(py: Python<'_>, source: &str, mode: &str) -> PyResult<Py<PyDict>> {
     guard(move || {
         let mode = carve_rs::HtmlImportMode::from_name(mode)
             .ok_or_else(|| PyValueError::new_err("mode must be safe, semantic, or roundtrip"))?;
-        let result = carve_rs::html_to_carve(
+        let result = carve_rs::migrate_html(
             source,
             &carve_rs::HtmlImportOptions {
                 mode,
@@ -1079,29 +1079,7 @@ fn from_html(py: Python<'_>, source: &str, mode: &str) -> PyResult<Py<PyDict>> {
             },
         )
         .map_err(|error| PyValueError::new_err(format!("HTML import failed: {error:?}")))?;
-        let diagnostics = result
-            .report
-            .diagnostics
-            .iter()
-            .map(|diagnostic| {
-                let item = PyDict::new(py);
-                item.set_item("code", diagnostic.code.as_str())?;
-                item.set_item("message", &diagnostic.message)?;
-                item.set_item("severity", diagnostic.severity.as_str())?;
-                if let Some(path) = &diagnostic.path {
-                    item.set_item("path", path)?;
-                }
-                Ok(item.unbind())
-            })
-            .collect::<PyResult<Vec<_>>>()?;
-        let report = PyDict::new(py);
-        report.set_item("mode", result.report.mode.as_str())?;
-        report.set_item("adapter", result.report.adapter.as_str())?;
-        report.set_item("diagnostics", diagnostics)?;
-        let output = PyDict::new(py);
-        output.set_item("value", result.value)?;
-        output.set_item("report", report)?;
-        Ok(output.unbind())
+        migration_result(py, result)
     })
 }
 
@@ -1109,14 +1087,44 @@ fn from_html(py: Python<'_>, source: &str, mode: &str) -> PyResult<Py<PyDict>> {
 #[pyfunction]
 fn from_markdown(py: Python<'_>, source: &str) -> PyResult<Py<PyDict>> {
     guard(move || {
-        let report = PyDict::new(py);
-        report.set_item("source_format", "markdown")?;
-        report.set_item("diagnostics", Vec::<String>::new())?;
-        let output = PyDict::new(py);
-        output.set_item("value", carve_rs::markdown_to_carve(source))?;
-        output.set_item("report", report)?;
-        Ok(output.unbind())
+        let result = carve_rs::try_migrate_markdown(source)
+            .map_err(|error| PyValueError::new_err(format!("Markdown import failed: {error}")))?;
+        migration_result(py, result)
     })
+}
+
+fn migration_result(py: Python<'_>, result: carve_rs::MigrationResult) -> PyResult<Py<PyDict>> {
+    let diagnostics = result
+        .report
+        .diagnostics
+        .iter()
+        .map(|diagnostic| {
+            let item = PyDict::new(py);
+            item.set_item("code", &diagnostic.code)?;
+            item.set_item("message", &diagnostic.message)?;
+            item.set_item("severity", diagnostic.severity.as_str())?;
+            item.set_item("fidelity", diagnostic.fidelity.as_str())?;
+            item.set_item("confidence", diagnostic.confidence.as_str())?;
+            if let Some(path) = &diagnostic.path {
+                item.set_item("path", path)?;
+            }
+            Ok(item.unbind())
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+    let report = PyDict::new(py);
+    report.set_item("schema_version", result.report.schema_version)?;
+    report.set_item("source_format", result.report.source_format.as_str())?;
+    if let Some(mode) = result.report.mode {
+        report.set_item("mode", mode.as_str())?;
+    }
+    if let Some(adapter) = result.report.adapter {
+        report.set_item("adapter", adapter.as_str())?;
+    }
+    report.set_item("diagnostics", diagnostics)?;
+    let output = PyDict::new(py);
+    output.set_item("value", result.value)?;
+    output.set_item("report", report)?;
+    Ok(output.unbind())
 }
 
 /// Read a document's provenance marker, as written by `carve fmt --stamp`.
