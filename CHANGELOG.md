@@ -8,13 +8,13 @@ therefore get an entry of their own.
 
 ## [Unreleased]
 
-- Pin Rust engine `675edf58` for ordered-list boundary preservation, raw-block profile fallback and the 2,230-example core corpus.
+- Pin Rust engine `675edf58` for ordered-list boundary preservation, raw-block profile fallback and the 2,230-example core corpus. This retains the Markdown fidelity and image-alt fixes from the previous pin.
+- Ordered lists retain their authored delimiter in HTML as `data-delim`. Markdown import preserves trailing form feeds and vertical tabs. Braced closers stay inside their bracket and code scopes. Djot migration preserves delimiter boundaries.
 
 - **Breaking:** Engine compatibility: image alt text and quoted include paths decode ASCII punctuation escapes; escape a literal backslash twice. Include rename warnings use `include-id-rename` instead of `include-heading-id-rename`.
 
 - **Breaking:** Markdown import reports contain construct assessments and loss diagnostics. Filter on `severity` or `fidelity` rather than treating every nonempty report as a loss. Both HTML and Markdown reports include `schema_version` and `source_format`, and their diagnostics retain fidelity and confidence.
 - A Markdown writer refusal raises `ValueError` instead of `EnginePanicError`.
-- Pin Rust engine `ed5581b1` to include Markdown construct assessment and the image-alt boundary fix.
 
 ## [0.1.7] - 2026-10-07
 
