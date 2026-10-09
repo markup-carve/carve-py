@@ -1,9 +1,6 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
   # The release path builds seven wheels and gates each one, and none of that
   # runs on an ordinary push - so a change to it used to be measured for the
   # first time by the tag that spent it. These two triggers make the path
