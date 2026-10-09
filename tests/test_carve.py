@@ -198,6 +198,12 @@ def test_html_import_preserves_fidelity_classification():
     assert row["path"] == "/p[1]"
 
 
+def test_markdown_depth_refusal_is_a_value_error():
+    with pytest.raises(ValueError, match="Markdown import failed"):
+        carve.from_markdown("> " * 512 + "text\n")
+    assert carve.to_html("after refusal") == "<p>after refusal</p>"
+
+
 # --- Engine language surface ---------------------------------------------
 #
 # These exercise the carve-rs engine through the binding's public API, so a
