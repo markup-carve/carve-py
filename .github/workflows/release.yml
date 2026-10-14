@@ -4,17 +4,26 @@ on:
   # The release path builds seven wheels and gates each one, and none of that
   # runs on an ordinary push - so a change to it used to be measured for the
   # first time by the tag that spent it. These two triggers make the path
-  # testable: a pull request that touches it runs everything except the upload,
-  # which is guarded on a tag ref.
+  # testable: a pull request that touches it builds and gates the linux-x86_64
+  # and macos-arm64 wheels and the sdist, and a dispatch without a version
+  # rehearses the full matrix without the upload.
   workflow_dispatch:
     inputs:
       version:
         description: Version to publish, without v; leave empty for rehearsal
         required: false
         type: string
-  # Every pull request, so the checks always report and can be required; the
-  # `changes` job below skips the work when the release path is untouched.
+  # Every pull request, so `Release path checks` always reports and can be
+  # required; the `changes` job below skips the work when the release path is
+  # untouched.
   pull_request:
+
+# One run per pull request: a new push cancels the one it supersedes. Every
+# other event gets a group of its own, because GitHub keeps only one pending
+# run per group and would drop a queued run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Jobs carry an explicit timeout-minutes: without one GitHub applies a
 # 360-minute default, long enough for a stalled job to go unnoticed.
@@ -26,6 +35,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       run: ${{ steps.diff.outputs.run }}
+      skip-wheels: ${{ steps.diff.outputs.skip-wheels }}
     steps:
       - uses: actions/checkout@v4
         if: github.event_name == 'pull_request'
@@ -40,8 +50,12 @@ jobs:
         run: |
           if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "skip-wheels=[]" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # A pull request builds and gates linux-x86_64 and macos-arm64 only.
+          # The full matrix runs on workflow_dispatch, which is the release path.
+          echo 'skip-wheels=[{"name":"linux-aarch64"},{"name":"linux-musl-x86_64"},{"name":"linux-musl-aarch64"},{"name":"macos-x86_64"},{"name":"windows-x86_64"}]' >> "$GITHUB_OUTPUT"
           changed="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
           printf '%s\n' "$changed"
           if printf '%s\n' "$changed" | grep -qxE '\.github/workflows/release\.yml|scripts/release-corpus-gate\.py|scripts/pinned-spec-commit\.py|Cargo\.toml|Cargo\.lock|pyproject\.toml'; then
@@ -116,9 +130,14 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     needs: [guard, changes]
+    if: needs.changes.outputs.run == 'true'
     strategy:
       fail-fast: false
       matrix:
+        # The name axis exists so `exclude` can drop entries on a pull request;
+        # `include` below adds each entry's runner and target.
+        name: [linux-x86_64, linux-aarch64, linux-musl-x86_64, linux-musl-aarch64, macos-arm64, macos-x86_64, windows-x86_64]
+        exclude: ${{ fromJSON(needs.changes.outputs.skip-wheels) }}
         include:
           - name: linux-x86_64
             runner: ubuntu-latest
@@ -142,14 +161,12 @@ jobs:
             runner: windows-latest
     steps:
       - uses: actions/checkout@v4
-        if: needs.changes.outputs.run == 'true'
 
       - name: Guard against panic = "abort"
-        if: needs.changes.outputs.run == 'true' && runner.os != 'Windows'
+        if: runner.os != 'Windows'
         run: bash scripts/check-panic-unwind.sh
 
       - name: Build wheels (abi3)
-        if: needs.changes.outputs.run == 'true'
         uses: PyO3/maturin-action@v1
         with:
           command: build
@@ -160,7 +177,6 @@ jobs:
           manylinux: ${{ matrix.manylinux }}
 
       - uses: actions/upload-artifact@v4
-        if: needs.changes.outputs.run == 'true'
         with:
           name: wheels-${{ matrix.name }}
           path: dist/
@@ -170,19 +186,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: [guard, changes]
+    if: needs.changes.outputs.run == 'true'
     steps:
       - uses: actions/checkout@v4
-        if: needs.changes.outputs.run == 'true'
 
       - name: Build sdist
-        if: needs.changes.outputs.run == 'true'
         uses: PyO3/maturin-action@v1
         with:
           command: sdist
           args: --out dist
 
       - uses: actions/upload-artifact@v4
-        if: needs.changes.outputs.run == 'true'
         with:
           name: sdist
           path: dist/
@@ -229,9 +243,12 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     needs: [build-wheels, changes]
+    if: needs.changes.outputs.run == 'true'
     strategy:
       fail-fast: false
       matrix:
+        name: [linux-x86_64, linux-aarch64, macos-arm64, macos-x86_64, windows-x86_64]
+        exclude: ${{ fromJSON(needs.changes.outputs.skip-wheels) }}
         include:
           - name: linux-x86_64
             runner: ubuntu-latest
@@ -245,7 +262,6 @@ jobs:
             runner: windows-latest
     steps:
       - uses: actions/checkout@v4
-        if: needs.changes.outputs.run == 'true'
 
       # AGAINST THE SPEC COMMIT THE PINNED ENGINE PINS, not against spec main.
       # This is a deliberate NARROWING of what this gate refuses, and it is the
@@ -283,7 +299,6 @@ jobs:
       # is reported by the corpus-drift job in ci.yml, on every push, every pull
       # request and a daily schedule.
       - name: Check out carve-rs
-        if: needs.changes.outputs.run == 'true'
         uses: actions/checkout@v4
         with:
           repository: markup-carve/carve-rs
@@ -298,12 +313,10 @@ jobs:
       # older and is not reliably on PATH as `python3`. setup-python gives every
       # runner the same `python`.
       - uses: actions/setup-python@v5
-        if: needs.changes.outputs.run == 'true'
         with:
           python-version: '3.12'
 
       - name: Resolve the spec commit the pinned engine pins
-        if: needs.changes.outputs.run == 'true'
         id: pin
         shell: bash
         run: |
@@ -315,7 +328,6 @@ jobs:
       # checkout, and tests/corpus_population.py reads those pages to derive how
       # many documents there should be. Both come from this one clone.
       - name: Check out the spec corpus that engine was written against
-        if: needs.changes.outputs.run == 'true'
         uses: actions/checkout@v4
         with:
           repository: markup-carve/carve
@@ -323,14 +335,12 @@ jobs:
           path: spec
 
       - name: Download the wheel this release would publish
-        if: needs.changes.outputs.run == 'true'
         uses: actions/download-artifact@v4
         with:
           name: wheels-${{ matrix.name }}
           path: dist
 
       - name: Run the spec corpus through it
-        if: needs.changes.outputs.run == 'true'
         shell: bash
         # Not $PWD: under Git Bash on the Windows runner that is a POSIX path
         # (/d/a/...) which Python does not resolve, so the corpus would look
@@ -383,6 +393,9 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     needs: [build-wheels, changes]
+    # Both musl wheels are skipped on a pull request, and a matrix with every
+    # entry excluded is an error, so this job is skipped as a whole there.
+    if: needs.changes.outputs.run == 'true' && github.event_name != 'pull_request'
     strategy:
       fail-fast: false
       matrix:
@@ -393,10 +406,8 @@ jobs:
             runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
-        if: needs.changes.outputs.run == 'true'
 
       - uses: actions/setup-python@v5
-        if: needs.changes.outputs.run == 'true'
         with:
           python-version: '3.12'
 
@@ -404,7 +415,6 @@ jobs:
       # WHEEL was written against, not spec main, which no wheel can satisfy on
       # the day it is built.
       - name: Check out carve-rs
-        if: needs.changes.outputs.run == 'true'
         uses: actions/checkout@v4
         with:
           repository: markup-carve/carve-rs
@@ -412,7 +422,6 @@ jobs:
           fetch-depth: 0
 
       - name: Resolve the spec commit the pinned engine pins
-        if: needs.changes.outputs.run == 'true'
         id: pin
         shell: bash
         run: |
@@ -421,7 +430,6 @@ jobs:
           echo "spec=$spec" >> "$GITHUB_OUTPUT"
 
       - name: Check out the spec corpus that engine was written against
-        if: needs.changes.outputs.run == 'true'
         uses: actions/checkout@v4
         with:
           repository: markup-carve/carve
@@ -429,14 +437,12 @@ jobs:
           path: spec
 
       - name: Download the wheel this release would publish
-        if: needs.changes.outputs.run == 'true'
         uses: actions/download-artifact@v4
         with:
           name: wheels-${{ matrix.name }}
           path: dist
 
       - name: Run the spec corpus through it, on musl
-        if: needs.changes.outputs.run == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -463,6 +469,27 @@ jobs:
                 --wheel "$WHEEL" --corpus spec/tests/corpus
               .gate/bin/python -m pytest -q tests
             '
+
+  # One context branch protection can require. The wheel and gate jobs are
+  # skipped as a whole when the release path is untouched, and a pull request
+  # runs only part of their matrix, so their per-wheel contexts do not report on
+  # every pull request.
+  release-path:
+    name: Release path checks
+    if: always()
+    needs: [changes, guard, build-wheels, build-sdist, corpus-gate, corpus-gate-musl]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every release-path job passed or was skipped
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          printf '%s\n' "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if printf '%s\n' "$RESULTS" | jq -e 'any(.[]; .result == "failure" or .result == "cancelled")' >/dev/null; then
+            echo "::error::a release-path job failed or was cancelled"
+            exit 1
+          fi
 
   publish:
     name: Publish to PyPI

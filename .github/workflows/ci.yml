@@ -16,6 +16,13 @@ on:
     - cron: "25 6 * * *"
   workflow_dispatch:
 
+# One run per pull request: a new push cancels the one it supersedes. Every
+# other event gets a group of its own, because GitHub keeps only one pending
+# run per group and would drop a queued run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 # Jobs carry an explicit timeout-minutes: without one GitHub applies a
 # 360-minute default, long enough for a stalled job to go unnoticed.
 
@@ -141,6 +148,11 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache the Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: cargo check
         run: cargo check
