@@ -24,11 +24,15 @@ def test_ast_writer_rejects_invalid_interchange(source):
         carve.render_ast_json(source)
 
 
-def test_ast_writer_refuses_blank_table_rows_without_source_spelling():
+def test_ast_writer_writes_a_blank_table_row():
+    # Since carve-rs 0.1.9 a row of blank cells is a table row, so it has a
+    # Carve spelling and reads back as the same row.
     ast = {'type': 'document', 'srcByteLength': 0, 'children': [
         {'type': 'table', 'rows': [{'type': 'table_row', 'cells': [
             {'type': 'table_cell', 'header': False, 'children': []}
         ]}]}
     ]}
-    with pytest.raises(ValueError, match='no Carve source spelling'):
-        carve.render_ast_json(json.dumps(ast))
+    written = carve.render_ast_json(json.dumps(ast))
+    assert written == '| |\n'
+    row = carve.parse(written, positions=False)['children'][0]['rows'][0]
+    assert row['cells'] == [{'type': 'table_cell', 'header': False, 'children': []}]
