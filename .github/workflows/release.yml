@@ -55,7 +55,7 @@ jobs:
           fi
           # A pull request builds and gates linux-x86_64 and macos-arm64 only.
           # The full matrix runs on workflow_dispatch, which is the release path.
-          echo 'skip-wheels=[{"name":"linux-aarch64"},{"name":"linux-musl-x86_64"},{"name":"linux-musl-aarch64"},{"name":"macos-x86_64"},{"name":"windows-x86_64"}]' >> "$GITHUB_OUTPUT"
+          echo 'skip-wheels=[{"wheel":{"name":"linux-aarch64"}},{"wheel":{"name":"linux-musl-x86_64"}},{"wheel":{"name":"linux-musl-aarch64"}},{"wheel":{"name":"macos-x86_64"}},{"wheel":{"name":"windows-x86_64"}}]' >> "$GITHUB_OUTPUT"
           changed="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
           printf '%s\n' "$changed"
           if printf '%s\n' "$changed" | grep -qxE '\.github/workflows/release\.yml|scripts/release-corpus-gate\.py|scripts/pinned-spec-commit\.py|Cargo\.toml|Cargo\.lock|pyproject\.toml'; then
@@ -126,19 +126,18 @@ jobs:
   # Zensical, the host this binding is most often installed beside, ships
   # twelve.
   build-wheels:
-    name: Build wheel (${{ matrix.name }})
-    runs-on: ${{ matrix.runner }}
+    name: Build wheel (${{ matrix.wheel.name }})
+    runs-on: ${{ matrix.wheel.runner }}
     timeout-minutes: 30
     needs: [guard, changes]
     if: needs.changes.outputs.run == 'true'
     strategy:
       fail-fast: false
       matrix:
-        # The name axis exists so `exclude` can drop entries on a pull request;
-        # `include` below adds each entry's runner and target.
-        name: [linux-x86_64, linux-aarch64, linux-musl-x86_64, linux-musl-aarch64, macos-arm64, macos-x86_64, windows-x86_64]
+        # One object axis rather than `include`, because `exclude` runs before
+        # `include` and an included entry that matches nothing is added back.
         exclude: ${{ fromJSON(needs.changes.outputs.skip-wheels) }}
-        include:
+        wheel:
           - name: linux-x86_64
             runner: ubuntu-latest
             manylinux: auto
@@ -173,12 +172,12 @@ jobs:
           args: --release --features pyo3/extension-module --out dist
           # abi3-py38 feature is set in pyproject.toml via [tool.maturin].
           # One wheel covers Python 3.8+ per PEP 384.
-          target: ${{ matrix.target }}
-          manylinux: ${{ matrix.manylinux }}
+          target: ${{ matrix.wheel.target }}
+          manylinux: ${{ matrix.wheel.manylinux }}
 
       - uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{ matrix.name }}
+          name: wheels-${{ matrix.wheel.name }}
           path: dist/
 
   build-sdist:
@@ -239,17 +238,16 @@ jobs:
   # three of them are covered here, each on its own platform because a wheel is
   # only installable on the platform it was built for.
   corpus-gate:
-    name: Corpus through the built wheel (${{ matrix.name }})
-    runs-on: ${{ matrix.runner }}
+    name: Corpus through the built wheel (${{ matrix.wheel.name }})
+    runs-on: ${{ matrix.wheel.runner }}
     timeout-minutes: 30
     needs: [build-wheels, changes]
     if: needs.changes.outputs.run == 'true'
     strategy:
       fail-fast: false
       matrix:
-        name: [linux-x86_64, linux-aarch64, macos-arm64, macos-x86_64, windows-x86_64]
         exclude: ${{ fromJSON(needs.changes.outputs.skip-wheels) }}
-        include:
+        wheel:
           - name: linux-x86_64
             runner: ubuntu-latest
           - name: linux-aarch64
@@ -337,7 +335,7 @@ jobs:
       - name: Download the wheel this release would publish
         uses: actions/download-artifact@v4
         with:
-          name: wheels-${{ matrix.name }}
+          name: wheels-${{ matrix.wheel.name }}
           path: dist
 
       - name: Run the spec corpus through it
