@@ -68,9 +68,14 @@ def test_a_span_the_engine_cannot_place_is_absent_not_invented():
     cell = carve.parse(source)["children"][0]["rows"][1]["cells"][1]
 
     assert "pos" not in cell, "a cell reassembled across lines must not claim a span"
-    text = cell["children"][0]
-    assert text["value"] == "A long description that continues"
-    assert "pos" not in text, "a value joined across lines must not claim a span"
+    # AST contract 1.1 keeps the join as a `cell_wrap` marker, so each half is
+    # its own text node and its span is a real slice of the source.
+    first, wrap, second = cell["children"]
+    assert wrap == {"type": "cell_wrap", "line": 1, "pos": wrap["pos"]}
+    for text in (first, second):
+        start, end = text["pos"]["startOffset"], text["pos"]["endOffset"]
+        assert source[start:end] == text["value"]
+    assert [first["value"], second["value"]] == ["A long description", "that continues"]
 
 
 def test_parse_json_returns_the_same_tree_as_parse():
