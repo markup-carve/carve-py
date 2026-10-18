@@ -25,11 +25,31 @@ use carve_rs::extensions::{
 use carve_rs::{CarveExtension, Mode, Options, Profile, ProfileViolationError, StaticRenderers};
 use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyString};
 use std::any::Any;
 use std::cell::RefCell;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::Once;
+
+struct Source(String);
+
+impl<'py> FromPyObject<'_, 'py> for Source {
+    type Error = PyErr;
+
+    fn extract(obj: pyo3::Borrowed<'_, 'py, PyAny>) -> Result<Self, Self::Error> {
+        let bytes: Vec<u8> = obj
+            .cast::<PyString>()?
+            .call_method1("encode", ("utf-16-le", "surrogatepass"))?
+            .extract()?;
+        let units = bytes
+            .chunks_exact(2)
+            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]));
+        let text = std::char::decode_utf16(units)
+            .map(|character| character.unwrap_or('\u{FFFD}'))
+            .collect();
+        Ok(Self(text))
+    }
+}
 
 // ---------------------------------------------------------------------------
 // FFI panic safety
@@ -750,7 +770,7 @@ fn resolve_mode_and_renderers(
 #[pyo3(signature = (source, extensions = None, mode = "interactive", renderers = None, symbols = None, safe = false, profile = None, *, extension_options = None, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
 #[allow(clippy::too_many_arguments)]
 fn to_html(
-    source: &str,
+    source: Source,
     extensions: Option<Vec<String>>,
     mode: &str,
     renderers: Option<Bound<'_, PyDict>>,
@@ -766,6 +786,8 @@ fn to_html(
     tag_url: Option<String>,
     profile_base_host: Option<String>,
 ) -> PyResult<String> {
+    let source = source.0;
+    let source = source.as_str();
     guard(move || {
         let engine_options = EngineOptions {
             lowercase_heading_ids,
@@ -820,7 +842,7 @@ fn to_html(
 #[pyo3(signature = (source, extensions, mode = "interactive", renderers = None, symbols = None, safe = false, profile = None, *, extension_options = None, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
 #[allow(clippy::too_many_arguments)]
 fn to_html_with_extensions(
-    source: &str,
+    source: Source,
     extensions: Vec<String>,
     mode: &str,
     renderers: Option<Bound<'_, PyDict>>,
@@ -836,6 +858,8 @@ fn to_html_with_extensions(
     tag_url: Option<String>,
     profile_base_host: Option<String>,
 ) -> PyResult<String> {
+    let source = source.0;
+    let source = source.as_str();
     guard(move || {
         let (parsed_mode, static_renderers) = resolve_mode_and_renderers(mode, renderers.as_ref())?;
         let symbol_pairs = match symbols.as_ref() {
@@ -875,7 +899,7 @@ fn is_core(extensions: &Option<Vec<String>>) -> bool {
 #[pyo3(signature = (source, extensions = None, profile = None, *, extension_options = None, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
 #[allow(clippy::too_many_arguments)]
 fn to_markdown(
-    source: &str,
+    source: Source,
     extensions: Option<Vec<String>>,
     profile: Option<&str>,
     extension_options: Option<Bound<'_, PyDict>>,
@@ -887,6 +911,8 @@ fn to_markdown(
     tag_url: Option<String>,
     profile_base_host: Option<String>,
 ) -> PyResult<String> {
+    let source = source.0;
+    let source = source.as_str();
     guard(move || {
         let engine_options = EngineOptions {
             lowercase_heading_ids,
@@ -931,7 +957,7 @@ fn to_markdown(
 #[pyo3(signature = (source, extensions = None, profile = None, *, extension_options = None, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
 #[allow(clippy::too_many_arguments)]
 fn to_plain_text(
-    source: &str,
+    source: Source,
     extensions: Option<Vec<String>>,
     profile: Option<&str>,
     extension_options: Option<Bound<'_, PyDict>>,
@@ -943,6 +969,8 @@ fn to_plain_text(
     tag_url: Option<String>,
     profile_base_host: Option<String>,
 ) -> PyResult<String> {
+    let source = source.0;
+    let source = source.as_str();
     guard(move || {
         let engine_options = EngineOptions {
             lowercase_heading_ids,
@@ -987,7 +1015,7 @@ fn to_plain_text(
 #[pyo3(signature = (source, extensions = None, profile = None, *, extension_options = None, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
 #[allow(clippy::too_many_arguments)]
 fn to_ansi(
-    source: &str,
+    source: Source,
     extensions: Option<Vec<String>>,
     profile: Option<&str>,
     extension_options: Option<Bound<'_, PyDict>>,
@@ -999,6 +1027,8 @@ fn to_ansi(
     tag_url: Option<String>,
     profile_base_host: Option<String>,
 ) -> PyResult<String> {
+    let source = source.0;
+    let source = source.as_str();
     guard(move || {
         let engine_options = EngineOptions {
             lowercase_heading_ids,
@@ -1045,7 +1075,9 @@ fn to_ansi(
 /// raises `ValueError` carrying the refusal instead (carve-py#90).
 #[pyfunction]
 #[pyo3(signature = (source, *, strict = false))]
-fn to_carve(source: &str, strict: bool) -> PyResult<String> {
+fn to_carve(source: Source, strict: bool) -> PyResult<String> {
+    let source = source.0;
+    let source = source.as_str();
     guard(move || {
         if strict {
             return carve_rs::try_to_carve_with_options(source, &Options::default())
@@ -1057,7 +1089,9 @@ fn to_carve(source: &str, strict: bool) -> PyResult<String> {
 
 /// Validate an AST JSON document and write canonical Carve source.
 #[pyfunction]
-fn render_ast_json(source: &str) -> PyResult<String> {
+fn render_ast_json(source: Source) -> PyResult<String> {
+    let source = source.0;
+    let source = source.as_str();
     guard(move || {
         let doc = carve_rs::from_json(source).map_err(|e| PyValueError::new_err(e.to_string()))?;
         carve_rs::render_carve(&doc).map_err(|e| PyValueError::new_err(e.to_string()))
@@ -1067,7 +1101,9 @@ fn render_ast_json(source: &str) -> PyResult<String> {
 /// Import HTML into canonical Carve and return the loss report beside it.
 #[pyfunction]
 #[pyo3(signature = (source, mode = "safe"))]
-fn from_html(py: Python<'_>, source: &str, mode: &str) -> PyResult<Py<PyDict>> {
+fn from_html(py: Python<'_>, source: Source, mode: &str) -> PyResult<Py<PyDict>> {
+    let source = source.0;
+    let source = source.as_str();
     guard(move || {
         let mode = carve_rs::HtmlImportMode::from_name(mode)
             .ok_or_else(|| PyValueError::new_err("mode must be safe, semantic, or roundtrip"))?;
@@ -1085,7 +1121,9 @@ fn from_html(py: Python<'_>, source: &str, mode: &str) -> PyResult<Py<PyDict>> {
 
 /// Import Markdown into canonical Carve with the shared migration result shape.
 #[pyfunction]
-fn from_markdown(py: Python<'_>, source: &str) -> PyResult<Py<PyDict>> {
+fn from_markdown(py: Python<'_>, source: Source) -> PyResult<Py<PyDict>> {
+    let source = source.0;
+    let source = source.as_str();
     guard(move || {
         let result = carve_rs::try_migrate_markdown(source)
             .map_err(|error| PyValueError::new_err(format!("Markdown import failed: {error}")))?;
@@ -1134,7 +1172,9 @@ fn migration_result(py: Python<'_>, result: carve_rs::MigrationResult) -> PyResu
 /// meaning "unknown" rather than "current". `generated_by` is None when the
 /// marker records no writer.
 #[pyfunction]
-fn read_stamp(py: Python<'_>, source: &str) -> PyResult<Option<Py<PyDict>>> {
+fn read_stamp(py: Python<'_>, source: Source) -> PyResult<Option<Py<PyDict>>> {
+    let source = source.0;
+    let source = source.as_str();
     guard(move || {
         let Some(stamp) = carve_rs::read_stamp(source) else {
             return Ok(None);
@@ -1157,7 +1197,9 @@ fn read_stamp(py: Python<'_>, source: &str) -> PyResult<Option<Py<PyDict>>> {
 /// against something other than this engine's spec version.
 #[pyfunction]
 #[pyo3(signature = (source, current_version = None))]
-fn needs_review(source: &str, current_version: Option<&str>) -> PyResult<bool> {
+fn needs_review(source: Source, current_version: Option<&str>) -> PyResult<bool> {
+    let source = source.0;
+    let source = source.as_str();
     guard(move || {
         Ok(carve_rs::needs_review(
             source,
@@ -1181,7 +1223,7 @@ fn needs_review(source: &str, current_version: Option<&str>) -> PyResult<bool> {
 #[pyo3(signature = (source, *, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
 #[allow(clippy::too_many_arguments)]
 fn parse_json(
-    source: &str,
+    source: Source,
     lowercase_heading_ids: Option<bool>,
     positions: Option<bool>,
     sections: Option<bool>,
@@ -1190,6 +1232,8 @@ fn parse_json(
     tag_url: Option<String>,
     profile_base_host: Option<String>,
 ) -> PyResult<String> {
+    let source = source.0;
+    let source = source.as_str();
     guard(move || {
         let options = EngineOptions {
             lowercase_heading_ids,
@@ -1218,7 +1262,7 @@ fn parse_json(
 #[allow(clippy::too_many_arguments)]
 fn parse(
     py: Python<'_>,
-    source: &str,
+    source: Source,
     lowercase_heading_ids: Option<bool>,
     positions: Option<bool>,
     sections: Option<bool>,
@@ -1227,12 +1271,14 @@ fn parse(
     tag_url: Option<String>,
     profile_base_host: Option<String>,
 ) -> PyResult<Py<PyAny>> {
+    let source = source.0;
+    let source = source.as_str();
     guard(move || {
         let json = py.import("json")?;
         let loaded = json.call_method1(
             "loads",
             (parse_json(
-                source,
+                Source(source.to_owned()),
                 lowercase_heading_ids,
                 positions,
                 sections,
@@ -1279,9 +1325,11 @@ fn parse(
 #[pyo3(signature = (source, extensions = None))]
 fn lint(
     py: Python<'_>,
-    source: &str,
+    source: Source,
     extensions: Option<Vec<String>>,
 ) -> PyResult<Vec<Py<PyDict>>> {
+    let source = source.0;
+    let source = source.as_str();
     guard(move || {
         let names = extensions.unwrap_or_default();
         let owned = boxed_extensions(&names, None)?;
@@ -1405,7 +1453,7 @@ fn root_relative(root_real: &std::path::Path, id: &str) -> String {
 #[allow(clippy::too_many_arguments)]
 fn render_with_includes(
     py: Python<'_>,
-    source: &str,
+    source: Source,
     include_root: &str,
     target: &str,
     extensions: Option<Vec<String>>,
@@ -1430,6 +1478,8 @@ fn render_with_includes(
     tag_url: Option<String>,
     profile_base_host: Option<String>,
 ) -> PyResult<Py<PyDict>> {
+    let source = source.0;
+    let source = source.as_str();
     guard(move || {
         let which = parse_include_target(target)?;
         let (parsed_mode, static_renderers) = resolve_mode_and_renderers(mode, renderers.as_ref())?;
