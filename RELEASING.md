@@ -1,8 +1,9 @@
 # Releasing
 
 Wheels and the sdist are published to PyPI as `carve-lang` by
-`.github/workflows/release.yml`, which runs on a pushed `v*` tag. The import
-name stays `carve`; only the distribution name differs.
+`.github/workflows/release.yml`. Dispatch it with a version after preparing the
+draft release. The workflow creates the `v*` tag after approval. The import name
+stays `carve`; only the distribution name differs.
 
 The publish job prefers a `PYPI_API_TOKEN` secret when one is set and otherwise
 uploads through Trusted Publishing, which stores no credential at all.
@@ -29,14 +30,14 @@ All of it happens outside this repository's files.
 
 ## Per release
 
-Before pushing the tag, prepare its draft release from the version's
+Prepare a draft release targeting the release commit from the version's
 `CHANGELOG.md` section, excluding the version heading. Resolve relative links
 to the tag and append
 `**Full Changelog**: https://github.com/markup-carve/carve-py/compare/vPREVIOUS...vX.Y.Z`.
 The publish job compares the stored body with that section and footer before
 uploading packages, and rechecks it before publishing the draft. Rehearse that
 gate with `gh workflow run rehearse-release-notes.yml -f tag=vX.Y.Z` before
-tagging.
+dispatching the release.
 
 1. Move the entries under a version heading in `CHANGELOG.md` and set its date.
 2. Set the version in **both** manifests: `project.version` in `pyproject.toml`
@@ -46,13 +47,18 @@ tagging.
    publishes a wheel that names itself one version and reports another, which is
    how carve-js shipped an exported constant reading 0.1.0 across three releases
    (`markup-carve/carve-js#1074`).
-3. Tag `vX.Y.Z` and push the tag. The workflow matches `v*` - a bare `0.1.0`
-   tag lands but fires nothing, which is a silent no-op rather than an error.
+3. Merge the release cut, then create or update the unpublished GitHub draft
+   release for `vX.Y.Z` with that merge commit as its target and the checked
+   release notes as its body.
+4. Run `gh workflow run release.yml -f version=X.Y.Z`. Approve the `pypi`
+   environment in that run. The workflow creates the tag, uploads the package,
+   and publishes the draft release after the checks pass.
 
 Steps 1 and 2 are checked rather than remembered: `tests/test_release_version.py`
 compares the two manifests and the changelog against each other and against the
 installed module on every CI run, and the release workflow's `guard` job refuses
-a tag that disagrees with either manifest.
+a version that disagrees with either manifest. A hand-pushed tag triggers the
+`tag-push-refused.yml` failure and is outside this release path.
 
 ## Which wheels a release builds
 
@@ -96,6 +102,6 @@ the upload, which is guarded on a tag ref.
 
 ## What the wheel embeds
 
-The engine is carve-rs, built from the revision recorded in `Cargo.lock`. That
-revision is what a release ships, so treat an engine bump as a release-worthy
-change: the same Python code renders differently underneath.
+The engine is carve-rs, built from the exact `carve-lang` version recorded in
+`Cargo.lock`. That version is what a release ships, so treat an engine bump as a
+release-worthy change: the same Python code can render differently underneath.
