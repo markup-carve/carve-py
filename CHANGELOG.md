@@ -8,6 +8,21 @@ therefore get an entry of their own.
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-10-18
+
+### Breaking
+
+- Empty link and image destinations now parse as links and images; AST contract 1.2 adds root and node fields (#109).
+- New render-loss codes for table spans and headers may need to be added to strict consumers (#109).
+
+### Fixes
+
+- Replace lone surrogates in Python input with U+FFFD during parsing; valid pairs stay intact (#109).
+
+### Improvements
+
+- Update to carve-rs 0.1.10 for CSV and TSV table fences, list continuation indentation in plain text (#109).
+
 ## [0.1.8] - 2026-10-14
 
 ### Breaking
@@ -254,7 +269,9 @@ First release.
 - Ship abi3 wheels (`abi3-py38`), so one wheel per platform covers CPython 3.8+,
   with `carve.pyi` type stubs.
 
-[Unreleased]: https://github.com/markup-carve/carve-py/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/markup-carve/carve-py/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/markup-carve/carve-py/compare/v0.1.8...v0.1.9
+[0.1.8]: https://github.com/markup-carve/carve-py/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/markup-carve/carve-py/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/markup-carve/carve-py/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/markup-carve/carve-py/compare/v0.1.4...v0.1.5
