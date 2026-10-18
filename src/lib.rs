@@ -786,9 +786,9 @@ fn to_html(
     tag_url: Option<String>,
     profile_base_host: Option<String>,
 ) -> PyResult<String> {
-    let source = source.0;
-    let source = source.as_str();
     guard(move || {
+        let source = source.0;
+        let source = source.as_str();
         let engine_options = EngineOptions {
             lowercase_heading_ids,
             positions,
@@ -858,9 +858,9 @@ fn to_html_with_extensions(
     tag_url: Option<String>,
     profile_base_host: Option<String>,
 ) -> PyResult<String> {
-    let source = source.0;
-    let source = source.as_str();
     guard(move || {
+        let source = source.0;
+        let source = source.as_str();
         let (parsed_mode, static_renderers) = resolve_mode_and_renderers(mode, renderers.as_ref())?;
         let symbol_pairs = match symbols.as_ref() {
             Some(dict) => build_symbols(dict)?,
@@ -911,9 +911,9 @@ fn to_markdown(
     tag_url: Option<String>,
     profile_base_host: Option<String>,
 ) -> PyResult<String> {
-    let source = source.0;
-    let source = source.as_str();
     guard(move || {
+        let source = source.0;
+        let source = source.as_str();
         let engine_options = EngineOptions {
             lowercase_heading_ids,
             positions,
@@ -969,9 +969,9 @@ fn to_plain_text(
     tag_url: Option<String>,
     profile_base_host: Option<String>,
 ) -> PyResult<String> {
-    let source = source.0;
-    let source = source.as_str();
     guard(move || {
+        let source = source.0;
+        let source = source.as_str();
         let engine_options = EngineOptions {
             lowercase_heading_ids,
             positions,
@@ -1027,9 +1027,9 @@ fn to_ansi(
     tag_url: Option<String>,
     profile_base_host: Option<String>,
 ) -> PyResult<String> {
-    let source = source.0;
-    let source = source.as_str();
     guard(move || {
+        let source = source.0;
+        let source = source.as_str();
         let engine_options = EngineOptions {
             lowercase_heading_ids,
             positions,
@@ -1076,9 +1076,9 @@ fn to_ansi(
 #[pyfunction]
 #[pyo3(signature = (source, *, strict = false))]
 fn to_carve(source: Source, strict: bool) -> PyResult<String> {
-    let source = source.0;
-    let source = source.as_str();
     guard(move || {
+        let source = source.0;
+        let source = source.as_str();
         if strict {
             return carve_rs::try_to_carve_with_options(source, &Options::default())
                 .map_err(|e| PyValueError::new_err(e.to_string()));
@@ -1090,9 +1090,9 @@ fn to_carve(source: Source, strict: bool) -> PyResult<String> {
 /// Validate an AST JSON document and write canonical Carve source.
 #[pyfunction]
 fn render_ast_json(source: Source) -> PyResult<String> {
-    let source = source.0;
-    let source = source.as_str();
     guard(move || {
+        let source = source.0;
+        let source = source.as_str();
         let doc = carve_rs::from_json(source).map_err(|e| PyValueError::new_err(e.to_string()))?;
         carve_rs::render_carve(&doc).map_err(|e| PyValueError::new_err(e.to_string()))
     })
@@ -1102,9 +1102,9 @@ fn render_ast_json(source: Source) -> PyResult<String> {
 #[pyfunction]
 #[pyo3(signature = (source, mode = "safe"))]
 fn from_html(py: Python<'_>, source: Source, mode: &str) -> PyResult<Py<PyDict>> {
-    let source = source.0;
-    let source = source.as_str();
     guard(move || {
+        let source = source.0;
+        let source = source.as_str();
         let mode = carve_rs::HtmlImportMode::from_name(mode)
             .ok_or_else(|| PyValueError::new_err("mode must be safe, semantic, or roundtrip"))?;
         let result = carve_rs::migrate_html(
@@ -1122,9 +1122,9 @@ fn from_html(py: Python<'_>, source: Source, mode: &str) -> PyResult<Py<PyDict>>
 /// Import Markdown into canonical Carve with the shared migration result shape.
 #[pyfunction]
 fn from_markdown(py: Python<'_>, source: Source) -> PyResult<Py<PyDict>> {
-    let source = source.0;
-    let source = source.as_str();
     guard(move || {
+        let source = source.0;
+        let source = source.as_str();
         let result = carve_rs::try_migrate_markdown(source)
             .map_err(|error| PyValueError::new_err(format!("Markdown import failed: {error}")))?;
         migration_result(py, result)
@@ -1173,9 +1173,9 @@ fn migration_result(py: Python<'_>, result: carve_rs::MigrationResult) -> PyResu
 /// marker records no writer.
 #[pyfunction]
 fn read_stamp(py: Python<'_>, source: Source) -> PyResult<Option<Py<PyDict>>> {
-    let source = source.0;
-    let source = source.as_str();
     guard(move || {
+        let source = source.0;
+        let source = source.as_str();
         let Some(stamp) = carve_rs::read_stamp(source) else {
             return Ok(None);
         };
@@ -1198,9 +1198,9 @@ fn read_stamp(py: Python<'_>, source: Source) -> PyResult<Option<Py<PyDict>>> {
 #[pyfunction]
 #[pyo3(signature = (source, current_version = None))]
 fn needs_review(source: Source, current_version: Option<&str>) -> PyResult<bool> {
-    let source = source.0;
-    let source = source.as_str();
     guard(move || {
+        let source = source.0;
+        let source = source.as_str();
         Ok(carve_rs::needs_review(
             source,
             current_version.unwrap_or(carve_rs::SPEC_VERSION),
@@ -1232,9 +1232,9 @@ fn parse_json(
     tag_url: Option<String>,
     profile_base_host: Option<String>,
 ) -> PyResult<String> {
-    let source = source.0;
-    let source = source.as_str();
     guard(move || {
+        let source = source.0;
+        let source = source.as_str();
         let options = EngineOptions {
             lowercase_heading_ids,
             positions: Some(positions.unwrap_or(true)),
@@ -1271,9 +1271,9 @@ fn parse(
     tag_url: Option<String>,
     profile_base_host: Option<String>,
 ) -> PyResult<Py<PyAny>> {
-    let source = source.0;
-    let source = source.as_str();
     guard(move || {
+        let source = source.0;
+        let source = source.as_str();
         let json = py.import("json")?;
         let loaded = json.call_method1(
             "loads",
@@ -1328,9 +1328,9 @@ fn lint(
     source: Source,
     extensions: Option<Vec<String>>,
 ) -> PyResult<Vec<Py<PyDict>>> {
-    let source = source.0;
-    let source = source.as_str();
     guard(move || {
+        let source = source.0;
+        let source = source.as_str();
         let names = extensions.unwrap_or_default();
         let owned = boxed_extensions(&names, None)?;
         let mut options = Options::new();
@@ -1478,9 +1478,9 @@ fn render_with_includes(
     tag_url: Option<String>,
     profile_base_host: Option<String>,
 ) -> PyResult<Py<PyDict>> {
-    let source = source.0;
-    let source = source.as_str();
     guard(move || {
+        let source = source.0;
+        let source = source.as_str();
         let which = parse_include_target(target)?;
         let (parsed_mode, static_renderers) = resolve_mode_and_renderers(mode, renderers.as_ref())?;
         let symbol_pairs = match symbols.as_ref() {
