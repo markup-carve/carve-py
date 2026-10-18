@@ -12,8 +12,8 @@ therefore get an entry of their own.
 
 ### Breaking
 
-- Empty link and image destinations now parse as links and images; AST contract 1.2 adds root and node fields (#109).
-- New render-loss codes for table spans and headers may need to be added to strict consumers (#109).
+- Empty link and image destinations now parse as links and images; AST contract 1.2 adds root and node fields (#109, markup-carve/carve-rs#2851).
+- New render-loss codes for table spans and headers may need to be added to strict consumers (#109, markup-carve/carve-rs#2800).
 
 ### Fixes
 
