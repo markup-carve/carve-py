@@ -22,7 +22,10 @@ use carve_rs::extensions::{
     MathBlock, MathBlockOptions, Position, TableOfContents, TableOfContentsOptions, Tabs, TabsMode,
     TabsOptions, Wikilinks, WikilinksOptions,
 };
-use carve_rs::{CarveExtension, Mode, Options, Profile, ProfileViolationError, StaticRenderers};
+use carve_rs::{
+    CarveExtension, IncludeRegionMode, Mode, Options, Profile, ProfileViolationError,
+    StaticRenderers,
+};
 use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
@@ -65,6 +68,14 @@ impl<'py> FromPyObject<'_, 'py> for Source {
 // unwind FIRST and raises `carve.EnginePanicError`, an `Exception` subclass.
 // The `panic = "unwind"` compile flag is still what makes any of this possible,
 // which is why scripts/check-panic-unwind.sh stays.
+
+pyo3::create_exception!(
+    carve,
+    IncludeRegionError,
+    PyValueError,
+    "The selected include region is missing, or a region marker is malformed \
+     or unpaired. `rule` carries the engine's warning rule id."
+);
 
 pyo3::create_exception!(
     carve,
@@ -1073,18 +1084,56 @@ fn to_ansi(
 /// By default a writer refusal comes back as the source as authored, which a
 /// caller cannot tell from a document that was already canonical. `strict`
 /// raises `ValueError` carrying the refusal instead (carve-py#90).
+/// `align_tables` pads table cells into aligned columns.
 #[pyfunction]
-#[pyo3(signature = (source, *, strict = false))]
-fn to_carve(source: Source, strict: bool) -> PyResult<String> {
+#[pyo3(signature = (source, *, strict = false, align_tables = false))]
+fn to_carve(source: Source, strict: bool, align_tables: bool) -> PyResult<String> {
     guard(move || {
         let source = source.0;
         let source = source.as_str();
-        if strict {
-            return carve_rs::try_to_carve_with_options(source, &Options::default())
-                .map_err(|e| PyValueError::new_err(e.to_string()));
+        let options = Options::default().with_align_tables(align_tables);
+        match carve_rs::try_to_carve_with_options(source, &options) {
+            Ok(output) => Ok(output),
+            Err(e) if strict => Err(PyValueError::new_err(e.to_string())),
+            Err(_) => Ok(source.to_string()),
         }
-        Ok(carve_rs::to_carve(source))
     })
+}
+
+/// Resolve `@region:name` in a file's text with the engine's marker rules.
+///
+/// Returns the 1-based, inclusive `(start, end)` content lines; an empty region
+/// has `end == start - 1`. Raises `IncludeRegionError` (its `rule` attribute is
+/// the warning rule id) when the region is missing or a marker is malformed.
+#[pyfunction]
+fn select_include_region(
+    py: Python<'_>,
+    source: Source,
+    name: &str,
+    mode: &str,
+) -> PyResult<(usize, usize)> {
+    let mode = match mode {
+        "carve" => IncludeRegionMode::Carve,
+        "code" => IncludeRegionMode::Code,
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "mode must be 'carve' or 'code', got {other:?}"
+            )))
+        }
+    };
+    guard(
+        move || match carve_rs::select_include_region(&source.0, name, mode) {
+            Ok(region) => Ok((region.start, region.end)),
+            Err(e) => {
+                let err = IncludeRegionError::new_err(format!(
+                    "{}: region {name:?} is missing or its markers are malformed",
+                    e.rule()
+                ));
+                err.value(py).setattr("rule", e.rule())?;
+                Err(err)
+            }
+        },
+    )
 }
 
 /// Validate an AST JSON document and write canonical Carve source.
@@ -1616,6 +1665,10 @@ fn carve(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     install_panic_hook();
     m.add("EnginePanicError", m.py().get_type::<EnginePanicError>())?;
+    m.add(
+        "IncludeRegionError",
+        m.py().get_type::<IncludeRegionError>(),
+    )?;
     m.add_function(wrap_pyfunction!(to_html, m)?)?;
     m.add_function(wrap_pyfunction!(to_html_with_extensions, m)?)?;
     m.add_function(wrap_pyfunction!(to_markdown, m)?)?;
@@ -1632,6 +1685,7 @@ fn carve(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(parse_json, m)?)?;
     m.add_function(wrap_pyfunction!(lint, m)?)?;
     m.add_function(wrap_pyfunction!(render_with_includes, m)?)?;
+    m.add_function(wrap_pyfunction!(select_include_region, m)?)?;
     m.add_function(wrap_pyfunction!(_panic_probe, m)?)?;
     Ok(())
 }

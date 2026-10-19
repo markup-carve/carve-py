@@ -1,6 +1,6 @@
 """Type stubs for the `carve` native binding (PyO3 over carve-rs)."""
 
-from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
+from typing import Any, Callable, Dict, List, Literal, Optional, TypedDict, Union
 
 __version__: str
 
@@ -11,11 +11,29 @@ class EnginePanicError(Exception):
     The document is not renderable; the interpreter is unaffected.
     """
 
-def to_carve(source: str, *, strict: bool = False) -> str:
+def to_carve(source: str, *, strict: bool = False, align_tables: bool = False) -> str:
     """Format Carve source into canonical Carve.
 
     With `strict`, a writer refusal raises `ValueError` instead of coming back
-    as the source as authored.
+    as the source as authored. `align_tables` pads table cells into aligned
+    columns.
+    """
+    ...
+
+class IncludeRegionError(ValueError):
+    """The selected include region is missing, or a marker is malformed or unpaired."""
+
+    rule: str
+
+def select_include_region(
+    source: str, name: str, mode: Literal["carve", "code"]
+) -> tuple[int, int]:
+    """Resolve `@region:name` with the engine's marker rules.
+
+    Returns the 1-based, inclusive `(start, end)` content lines; an empty
+    region has `end == start - 1`. `mode="carve"` only accepts `%% #region`
+    markers, `mode="code"` also the source-comment forms. Raises
+    `IncludeRegionError` with `rule == "include-region-invalid"`.
     """
     ...
 
