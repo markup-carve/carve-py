@@ -1112,17 +1112,17 @@ fn select_include_region(
     name: &str,
     mode: &str,
 ) -> PyResult<(usize, usize)> {
-    let mode = match mode {
-        "carve" => IncludeRegionMode::Carve,
-        "code" => IncludeRegionMode::Code,
-        other => {
-            return Err(PyValueError::new_err(format!(
-                "mode must be 'carve' or 'code', got {other:?}"
-            )))
-        }
-    };
-    guard(
-        move || match carve_rs::select_include_region(&source.0, name, mode) {
+    guard(move || {
+        let mode = match mode {
+            "carve" => IncludeRegionMode::Carve,
+            "code" => IncludeRegionMode::Code,
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "mode must be 'carve' or 'code', got {other:?}"
+                )))
+            }
+        };
+        match carve_rs::select_include_region(&source.0, name, mode) {
             Ok(region) => Ok((region.start, region.end)),
             Err(e) => {
                 let err = IncludeRegionError::new_err(format!(
@@ -1132,8 +1132,8 @@ fn select_include_region(
                 err.value(py).setattr("rule", e.rule())?;
                 Err(err)
             }
-        },
-    )
+        }
+    })
 }
 
 /// Validate an AST JSON document and write canonical Carve source.
