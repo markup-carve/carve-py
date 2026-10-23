@@ -46,3 +46,20 @@ def test_byte_identical_to_cli(src):
     # The CLI guarantees exactly one trailing newline; normalize both sides to
     # a single trailing newline so we compare the rendered body byte-for-byte.
     assert py.rstrip("\n") + "\n" == cli.rstrip("\n") + "\n"
+
+
+@pytest.mark.skipif(
+    not os.path.exists(CARVE_BIN),
+    reason="carve-rs CLI binary not built",
+)
+def test_safe_includes_match_the_cli(tmp_path):
+    (tmp_path / "child.crv").write_text("CHILD\n", encoding="utf-8")
+    src = "{{ child.crv }}\n\nText {{ child.crv }} here.\n"
+    res = subprocess.run(
+        [CARVE_BIN, "--html", "--safe", "--include-root", str(tmp_path)],
+        input=src.encode("utf-8"),
+        capture_output=True,
+        check=True,
+    )
+    py = carve.render_with_includes(src, str(tmp_path), safe=True)["output"]
+    assert py.rstrip("\n") == res.stdout.decode("utf-8").rstrip("\n")

@@ -442,6 +442,10 @@ def render_with_includes(
     Paths in the result are relative to ``include_root``, so a report shown to
     a reader carries no host directory layout.
 
+    ``safe=True`` turns includes off, as carve-rs ``--safe`` does: no file is
+    read, every directive stays literal, and ``warnings`` and ``dependencies``
+    are empty. The root is not opened, so it is not validated either.
+
     The string entry points (:func:`to_html` and friends) have no root and
     expand nothing - a directive stays literal there.
     """
