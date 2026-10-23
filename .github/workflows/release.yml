@@ -37,7 +37,7 @@ jobs:
       run: ${{ steps.diff.outputs.run }}
       skip-wheels: ${{ steps.diff.outputs.skip-wheels }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: github.event_name == 'pull_request'
         with:
           fetch-depth: 0
@@ -73,7 +73,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Both manifests, not just pyproject.toml. pyproject is what PyPI
       # publishes; Cargo.toml is what `carve.__version__` reports, because the
@@ -159,7 +159,7 @@ jobs:
           - name: windows-x86_64
             runner: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Guard against panic = "abort"
         if: runner.os != 'Windows'
@@ -175,7 +175,7 @@ jobs:
           target: ${{ matrix.wheel.target }}
           manylinux: ${{ matrix.wheel.manylinux }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ matrix.wheel.name }}
           path: dist/
@@ -187,7 +187,7 @@ jobs:
     needs: [guard, changes]
     if: needs.changes.outputs.run == 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build sdist
         uses: PyO3/maturin-action@v1
@@ -195,7 +195,7 @@ jobs:
           command: sdist
           args: --out dist
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sdist
           path: dist/
@@ -259,7 +259,7 @@ jobs:
           - name: windows-x86_64
             runner: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # AGAINST THE SPEC COMMIT THE PINNED ENGINE PINS, not against spec main.
       # This is a deliberate NARROWING of what this gate refuses, and it is the
@@ -297,7 +297,7 @@ jobs:
       # is reported by the corpus-drift job in ci.yml, on every push, every pull
       # request and a daily schedule.
       - name: Check out carve-rs
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: markup-carve/carve-rs
           path: carve-rs
@@ -310,7 +310,7 @@ jobs:
       # tomllib (3.11+), and the Windows runner's preinstalled interpreter is
       # older and is not reliably on PATH as `python3`. setup-python gives every
       # runner the same `python`.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -326,14 +326,14 @@ jobs:
       # checkout, and tests/corpus_population.py reads those pages to derive how
       # many documents there should be. Both come from this one clone.
       - name: Check out the spec corpus that engine was written against
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: markup-carve/carve
           ref: ${{ steps.pin.outputs.spec }}
           path: spec
 
       - name: Download the wheel this release would publish
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: wheels-${{ matrix.wheel.name }}
           path: dist
@@ -403,9 +403,9 @@ jobs:
           - name: linux-musl-aarch64
             runner: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -413,7 +413,7 @@ jobs:
       # WHEEL was written against, not spec main, which no wheel can satisfy on
       # the day it is built.
       - name: Check out carve-rs
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: markup-carve/carve-rs
           path: carve-rs
@@ -428,14 +428,14 @@ jobs:
           echo "spec=$spec" >> "$GITHUB_OUTPUT"
 
       - name: Check out the spec corpus that engine was written against
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: markup-carve/carve
           ref: ${{ steps.pin.outputs.spec }}
           path: spec
 
       - name: Download the wheel this release would publish
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: wheels-${{ matrix.name }}
           path: dist
@@ -552,7 +552,7 @@ jobs:
             echo "mode=oidc" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist/
           merge-multiple: true
