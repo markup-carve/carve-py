@@ -8,6 +8,20 @@ therefore get an entry of their own.
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-10-23
+
+### Breaking
+
+- Update to carve-rs 0.1.11. Quote-prefixed `+` continuation markers need a space after each `>`, and continuation markers, fences and lazy lines in nested containers follow the spec's ownership rules, so some documents parse differently (markup-carve/carve-rs#3065, markup-carve/carve#3421).
+- Lint reports new rule ids, such as `unclosed-code-fence`, ordered-list column traps and refused `+` markers. A check that fails on unknown ids has to list them (markup-carve/carve-rs#2905, markup-carve/carve-rs#3080).
+
+### Improvements
+
+- `carve.to_carve(source, align_tables=True)` pads table cells into aligned columns (#112).
+- `carve.select_include_region(source, name, mode)` resolves an `@region` with the engine's marker rules in `"carve"` and `"code"` mode, raising `IncludeRegionError` with the rule id (#112).
+- `carve.lint(source, include_root=..., source_path=...)` also lints included Carve files and reports literal include directives; every finding gains `file` and `includedBy` keys (#112).
+- An include that is not valid UTF-8 warns as `include-non-text` (#112).
+
 ## [0.1.9] - 2026-10-18
 
 ### Breaking

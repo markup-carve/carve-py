@@ -77,6 +77,19 @@ def test_select_include_region(name, mode, expected):
     assert carve.select_include_region(DOC, name, mode) == expected
 
 
+@pytest.mark.parametrize("mode", ["carve", "code"])
+def test_a_leading_bom_does_not_hide_a_line_one_marker(mode):
+    source = "\ufeff%% #region b\ny\n%% #endregion\n"
+    assert carve.select_include_region(source, "b", mode) == (2, 2)
+
+
+def test_an_html_comment_marker_counts_only_in_code_mode():
+    source = "<!-- #region h -->\nz\n<!-- #endregion -->\n"
+    assert carve.select_include_region(source, "h", "code") == (2, 2)
+    with pytest.raises(carve.IncludeRegionError):
+        carve.select_include_region(source, "h", "carve")
+
+
 def test_an_empty_region_ends_before_it_starts():
     source = "%% #region e\n%% #endregion\n"
     assert carve.select_include_region(source, "e", "carve") == (2, 1)

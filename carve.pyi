@@ -328,6 +328,15 @@ def parse_json(
 def lint(
     source: str,
     extensions: Optional[List[str]] = None,
+    *,
+    include_root: Optional[str] = None,
+    source_path: Optional[str] = None,
+    allow_absolute: bool = False,
+    max_file_bytes: Optional[int] = None,
+    max_depth: Optional[int] = None,
+    max_bytes: Optional[int] = None,
+    max_resolver_calls: Optional[int] = None,
+    max_warnings: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """Report constructs that parse and render, but not the way the author meant.
 
@@ -354,8 +363,17 @@ def lint(
         every document carrying one non-ASCII character before a warning;
         the unit follows the host language, and Python's is the codepoint.
 
-    Only ``extensions`` is accepted, because it is the only option the
-    engine's linter reads.
+    ``file``, ``includedBy``
+        ``None`` and ``[]`` for a finding in ``source`` itself.
+
+    ``extensions`` selects the rules, as for rendering. With ``include_root``
+    (and optionally ``source_path``, as for ``render_with_includes``) the pass
+    also lints every included Carve file and reports include directives that
+    stay literal, such as ``include-unresolved`` or ``include-non-text``. Those
+    findings name their root-relative ``file`` and the ``includedBy`` chain of
+    ``{file, line, column}`` sites, top-level first; their ``start`` and
+    ``end`` are ``None``, since the offsets would index another text. The
+    include budgets are accepted as for rendering.
     """
     ...
 

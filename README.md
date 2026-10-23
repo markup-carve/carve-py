@@ -128,6 +128,7 @@ Each warning is a dict:
 | `rule` | a stable id, shared with carve-js and carve-php - the same trigger reports the same id in every engine |
 | `message` | what degrades, in prose |
 | `start`, `end` | codepoint offsets into the source, 0-based, end exclusive |
+| `file`, `includedBy` | the included file and its include chain; `None` and `[]` for the source itself |
 
 `start` and `end` slice the offending text directly:
 
@@ -144,11 +145,24 @@ document carrying one non-ASCII character before a warning. The unit follows the
 host language - carve-js converts the same positions to UTF-16 for the same
 reason.
 
-`extensions` is the only option accepted, because it is the only one the
-engine's linter reads:
+Pass the `extensions` you render with; they decide which rules apply:
 
 ```python
 carve.lint(source, extensions=["details"])
+```
+
+Every warning also carries `file` and `includedBy`, `None` and `[]` for a
+finding in the source itself. With `include_root` (and `source_path`, as for
+`render_with_includes`) the pass also lints every included Carve file and
+reports include directives that stay literal, such as `include-unresolved` or
+`include-non-text`. Those findings name their root-relative `file` and the
+`includedBy` chain of `{file, line, column}` sites, top-level first. Their
+`start` and `end` are `None`, since the offsets would index another text. The
+include budgets (`max_depth`, `max_bytes`, `max_resolver_calls`,
+`max_warnings`, `max_file_bytes`) are accepted as for rendering.
+
+```python
+carve.lint(source, include_root="/abs/docs", source_path="book.crv")
 ```
 
 ## The parsed AST

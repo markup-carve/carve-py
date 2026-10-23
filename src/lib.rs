@@ -1357,7 +1357,7 @@ fn parse(
 /// no Python caller could reach the report.
 ///
 /// Returns a list of dicts, one per warning, each carrying `line`, `column`,
-/// `rule`, `message`, `start` and `end`.
+/// `rule`, `message`, `start`, `end`, `file` and `includedBy`.
 ///
 /// `start` and `end` are CODEPOINT offsets, not the byte offsets the Rust API
 /// reports. That conversion is the whole reason this is not a two-line
@@ -1368,14 +1368,26 @@ fn parse(
 /// document containing one non-ASCII character before a warning, which is the
 /// class of bug that only shows up in someone else's language.
 ///
-/// Only `extensions` is accepted, because it is the only option the engine's
-/// linter reads.
+/// `extensions` selects the rules, as for rendering. With `include_root` the
+/// pass also lints every included Carve file and reports include directives
+/// that stay literal; those findings carry `file` (root-relative) and the
+/// `includedBy` chain, top-level first, and `start`/`end` of `None`, since the
+/// offsets would index another text.
 #[pyfunction]
-#[pyo3(signature = (source, extensions = None))]
+#[pyo3(signature = (source, extensions = None, *, include_root = None, source_path = None, allow_absolute = false, max_file_bytes = None, max_depth = None, max_bytes = None, max_resolver_calls = None, max_warnings = None))]
+#[allow(clippy::too_many_arguments)]
 fn lint(
     py: Python<'_>,
     source: Source,
     extensions: Option<Vec<String>>,
+    include_root: Option<String>,
+    source_path: Option<String>,
+    allow_absolute: bool,
+    max_file_bytes: Option<u64>,
+    max_depth: Option<usize>,
+    max_bytes: Option<usize>,
+    max_resolver_calls: Option<usize>,
+    max_warnings: Option<usize>,
 ) -> PyResult<Vec<Py<PyDict>>> {
     guard(move || {
         let source = source.0;
@@ -1386,14 +1398,57 @@ fn lint(
         for ext in &owned {
             options = options.with_extension(ext.as_ref());
         }
-        let warnings = carve_rs::lint_carve_with_options(source, &options);
+        // The document's own findings come first and are the only ones whose
+        // offsets index `source`, so they are counted from a run without includes.
+        let own = carve_rs::lint_carve_with_options(source, &options);
+        let own_count = own.len();
+        let (warnings, root_real) = match include_root {
+            None => {
+                if source_path.is_some() {
+                    return Err(PyValueError::new_err(
+                        "source_path needs include_root to follow includes",
+                    ));
+                }
+                (own, None)
+            }
+            Some(include_root) => {
+                let mut resolver = carve_rs::FileSystemResolver::new(&include_root)
+                    .map_err(|e| {
+                        PyValueError::new_err(format!(
+                            "cannot use include root {include_root:?}: {e}"
+                        ))
+                    })?
+                    .allow_absolute(allow_absolute);
+                if let Some(bytes) = max_file_bytes {
+                    resolver = resolver.with_max_file_bytes(Some(bytes));
+                }
+                let root_real = std::fs::canonicalize(&include_root)?;
+                let mut include_options = carve_rs::IncludeOptions::new().with_resolver(&resolver);
+                if let Some(path) = source_path {
+                    include_options = include_options.with_source_path(path);
+                }
+                if let Some(depth) = max_depth {
+                    include_options = include_options.with_max_depth(depth);
+                }
+                if let Some(bytes) = max_bytes {
+                    include_options = include_options.with_max_bytes(bytes);
+                }
+                if let Some(calls) = max_resolver_calls {
+                    include_options = include_options.with_max_resolver_calls(calls);
+                }
+                if let Some(cap) = max_warnings {
+                    include_options = include_options.with_max_warnings(cap);
+                }
+                let options = options.with_lint_includes(include_options);
+                (
+                    carve_rs::lint_carve_with_options(source, &options),
+                    Some(root_real),
+                )
+            }
+        };
 
-        // One pass over the source builds a byte -> codepoint table, so a document
-        // with many warnings does not re-scan it once per warning. Every byte
-        // WITHIN a character maps to that character's index, which means a byte
-        // offset landing mid-character (it should not, but a wrong answer here
-        // must not be a panic) resolves to the character containing it. The final
-        // slot is the total, so an end offset at EOF resolves.
+        // One pass builds a byte -> codepoint table; a byte inside a character
+        // maps to that character, and the final slot is the total.
         let mut codepoint_at: Vec<usize> = Vec::with_capacity(source.len() + 1);
         let mut count = 0usize;
         for (_, ch) in source.char_indices() {
@@ -1405,16 +1460,31 @@ fn lint(
         codepoint_at.push(count);
         let to_codepoint =
             |byte: usize| -> usize { codepoint_at.get(byte).copied().unwrap_or(count) };
+        let path = |value: &str| match &root_real {
+            Some(root_real) => root_relative(root_real, value),
+            None => value.to_string(),
+        };
 
         let mut out = Vec::with_capacity(warnings.len());
-        for warning in warnings {
+        for (index, warning) in warnings.into_iter().enumerate() {
+            let own = index < own_count;
             let dict = PyDict::new(py);
             dict.set_item("line", warning.line)?;
             dict.set_item("column", warning.column)?;
             dict.set_item("rule", warning.rule)?;
             dict.set_item("message", warning.message)?;
-            dict.set_item("start", to_codepoint(warning.start))?;
-            dict.set_item("end", to_codepoint(warning.end))?;
+            dict.set_item("start", own.then(|| to_codepoint(warning.start)))?;
+            dict.set_item("end", own.then(|| to_codepoint(warning.end)))?;
+            dict.set_item("file", warning.file.as_deref().map(path))?;
+            let chain = pyo3::types::PyList::empty(py);
+            for site in &warning.included_by {
+                let item = PyDict::new(py);
+                item.set_item("file", path(&site.file))?;
+                item.set_item("line", site.line)?;
+                item.set_item("column", site.column)?;
+                chain.append(item)?;
+            }
+            dict.set_item("includedBy", chain)?;
             out.push(dict.unbind());
         }
         Ok(out)
