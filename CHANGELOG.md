@@ -12,6 +12,7 @@ therefore get an entry of their own.
 
 ### Breaking
 
+- `render_with_includes(safe=True)` no longer expands includes: no file is read and every directive stays literal, as with carve-rs `--safe` (#113, markup-carve/carve-rs#2911).
 - Update to carve-rs 0.1.11. Quote-prefixed `+` continuation markers need a space after each `>`, and continuation markers, fences and lazy lines in nested containers follow the spec's ownership rules, so some documents parse differently (markup-carve/carve-rs#3065, markup-carve/carve#3421).
 - Lint reports new rule ids, such as `unclosed-code-fence`, ordered-list column traps and refused `+` markers. A check that fails on unknown ids has to list them (markup-carve/carve-rs#2905, markup-carve/carve-rs#3080).
 

@@ -331,3 +331,41 @@ def test_a_single_inclusion_is_not_renamed(twice):
     assert ids == ["dup"]
     assert hrefs == ["#dup"]
     assert "include-id-rename" not in rules(result)
+
+
+SAFE_SOURCE = "Before.\n\n{{ chapters/one.crv }}\n\nInline {{ chapters/one.crv }} text.\n"
+
+
+@pytest.mark.parametrize("target", ["html", "markdown", "plain", "ansi"])
+def test_safe_leaves_every_directive_literal(book, target):
+    result = render(book, SAFE_SOURCE, target=target, safe=True, source_path="main.crv")
+    assert "One." not in result["output"]
+    assert "chapters/one.crv" in result["output"]
+    assert result["warnings"] == []
+    assert result["suppressed_warnings"] == 0
+    assert result["dependencies"] == []
+
+
+def test_safe_output_is_the_string_entry_point_output(book):
+    result = render(book, SAFE_SOURCE, safe=True)
+    assert result["output"] == carve.to_html(SAFE_SOURCE, safe=True)
+
+
+def test_safe_reads_no_file(tmp_path):
+    # Unsafe, this root raises and this file is refused; safe touches neither.
+    secret = write(tmp_path / "root" / "secret.crv", "SECRET-MARKER\n")
+    secret.chmod(0)
+    try:
+        result = carve.render_with_includes(
+            "{{ secret.crv }}\n", str(tmp_path / "root"), safe=True
+        )
+        missing = carve.render_with_includes(
+            "{{ secret.crv }}\n", str(tmp_path / "no-such-root"), safe=True
+        )
+    finally:
+        secret.chmod(0o600)
+    assert result == missing
+    assert "SECRET-MARKER" not in result["output"]
+    assert result["dependencies"] == []
+    with pytest.raises(ValueError, match="include root"):
+        carve.render_with_includes("{{ secret.crv }}\n", str(tmp_path / "no-such-root"))

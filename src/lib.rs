@@ -1616,6 +1616,41 @@ fn render_with_includes(
             profile_base_host,
         };
 
+        // `safe` implies no includes, as carve-rs `--safe` and carve-js/php do:
+        // no resolver, no file read, directives stay literal (carve-rs#2911).
+        if safe {
+            let names = extensions.unwrap_or_default();
+            return with_options(
+                &names,
+                extension_options.as_ref(),
+                parsed_mode,
+                static_renderers,
+                &symbol_pairs,
+                safe,
+                profile,
+                engine_options,
+                |options| {
+                    let output = match which {
+                        IncludeTarget::Html => carve_rs::try_to_html_with_options(source, options),
+                        IncludeTarget::Markdown => {
+                            carve_rs::try_to_markdown_with_options(source, options)
+                        }
+                        IncludeTarget::Plain => {
+                            carve_rs::try_to_plain_text_with_options(source, options)
+                        }
+                        IncludeTarget::Ansi => carve_rs::try_to_ansi_with_options(source, options),
+                    }
+                    .map_err(|e| PyValueError::new_err(e.to_string()))?;
+                    let out = PyDict::new(py);
+                    out.set_item("output", output)?;
+                    out.set_item("warnings", pyo3::types::PyList::empty(py))?;
+                    out.set_item("suppressed_warnings", 0)?;
+                    out.set_item("dependencies", pyo3::types::PyList::empty(py))?;
+                    Ok(out.unbind())
+                },
+            );
+        }
+
         // The configured root reaches the resolver UNCHANGED. Absolutizing it here
         // would be the one thing that disarms the refusal above: `include_root=".."`
         // would canonicalize to the parent of whatever directory the build happens

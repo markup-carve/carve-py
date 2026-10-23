@@ -228,6 +228,11 @@ The string entry points (`to_html` and friends) take no root and expand
 nothing - a directive stays literal there, so a caller who never opted in never
 touches the filesystem.
 
+**`safe=True` turns includes off.** Every directive stays literal, nothing is
+read, and `warnings` and `dependencies` come back empty, as with carve-rs
+`--safe` and carve-js and carve-php. The root is not even opened, so an
+untrusted document rendered with `safe=True` cannot reach a file.
+
 **The root must be absolute.** A relative value names no root: every
 canonicalizer resolves one against the process working directory, which is
 arbitrary with respect to the document, so `include_root=".."` would silently
