@@ -31,7 +31,9 @@ def test_an_unattached_block_attribute_is_reported():
 
 def test_a_warning_carries_every_documented_field():
     warning = carve.lint(ORPHAN)[0]
-    assert set(warning) == {"line", "column", "rule", "message", "start", "end"}
+    assert set(warning) == {"line", "column", "rule", "message", "start", "end", "file", "includedBy"}
+    assert warning["file"] is None
+    assert warning["includedBy"] == []
     assert isinstance(warning["line"], int)
     assert isinstance(warning["column"], int)
     assert isinstance(warning["rule"], str)
@@ -193,3 +195,39 @@ def test_a_case_only_crossref_near_miss_is_reported_and_names_the_id():
     assert '"Mixed-Case"' in near[0]["message"]
 
     assert carve.lint("# Mixed Case\n\n</#Mixed-Case>\n") == []
+
+
+def test_include_root_lints_the_included_file_with_its_chain(tmp_path):
+    (tmp_path / "parts").mkdir()
+    (tmp_path / "parts" / "child.crv").write_text("{#orphan}\n\n", encoding="utf-8")
+    (tmp_path / "book.crv").write_text("Intro\n\n{{ parts/child.crv }}\n", encoding="utf-8")
+    source = (tmp_path / "book.crv").read_text(encoding="utf-8")
+    warnings = carve.lint(source, include_root=str(tmp_path), source_path="book.crv")
+    assert warnings == [
+        {
+            "line": 1,
+            "column": 1,
+            "rule": "unattached-block-attribute",
+            "message": warnings[0]["message"],
+            "start": None,
+            "end": None,
+            "file": "parts/child.crv",
+            "includedBy": [{"file": "book.crv", "line": 3, "column": 1}],
+        }
+    ]
+
+
+def test_include_root_reports_a_literal_directive(tmp_path):
+    (tmp_path / "blob.crv").write_bytes(b"ok \xff\xfe\n")
+    warnings = carve.lint("{{ blob.crv }}\n{{ missing.crv }}\n", include_root=str(tmp_path))
+    assert sorted(w["rule"] for w in warnings) == ["include-non-text", "include-unresolved"]
+    assert all(w["start"] is None and w["end"] is None for w in warnings)
+
+
+def test_without_include_root_a_directive_is_not_followed(tmp_path):
+    assert carve.lint("{{ missing.crv }}\n") == []
+
+
+def test_source_path_without_include_root_is_refused():
+    with pytest.raises(ValueError, match="include_root"):
+        carve.lint("x\n", source_path="book.crv")

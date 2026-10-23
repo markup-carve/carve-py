@@ -1,6 +1,6 @@
 """Type stubs for the `carve` native binding (PyO3 over carve-rs)."""
 
-from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
+from typing import Any, Callable, Dict, List, Literal, Optional, TypedDict, Union
 
 __version__: str
 
@@ -11,11 +11,29 @@ class EnginePanicError(Exception):
     The document is not renderable; the interpreter is unaffected.
     """
 
-def to_carve(source: str, *, strict: bool = False) -> str:
+def to_carve(source: str, *, strict: bool = False, align_tables: bool = False) -> str:
     """Format Carve source into canonical Carve.
 
     With `strict`, a writer refusal raises `ValueError` instead of coming back
-    as the source as authored.
+    as the source as authored. `align_tables` pads table cells into aligned
+    columns.
+    """
+    ...
+
+class IncludeRegionError(ValueError):
+    """The selected include region is missing, or a marker is malformed or unpaired."""
+
+    rule: str
+
+def select_include_region(
+    source: str, name: str, mode: Literal["carve", "code"]
+) -> tuple[int, int]:
+    """Resolve `@region:name` with the engine's marker rules.
+
+    Returns the 1-based, inclusive `(start, end)` content lines; an empty
+    region has `end == start - 1`. `mode="carve"` only accepts `%% #region`
+    markers, `mode="code"` also the source-comment forms. Raises
+    `IncludeRegionError` with `rule == "include-region-invalid"`.
     """
     ...
 
@@ -310,6 +328,15 @@ def parse_json(
 def lint(
     source: str,
     extensions: Optional[List[str]] = None,
+    *,
+    include_root: Optional[str] = None,
+    source_path: Optional[str] = None,
+    allow_absolute: bool = False,
+    max_file_bytes: Optional[int] = None,
+    max_depth: Optional[int] = None,
+    max_bytes: Optional[int] = None,
+    max_resolver_calls: Optional[int] = None,
+    max_warnings: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """Report constructs that parse and render, but not the way the author meant.
 
@@ -336,8 +363,17 @@ def lint(
         every document carrying one non-ASCII character before a warning;
         the unit follows the host language, and Python's is the codepoint.
 
-    Only ``extensions`` is accepted, because it is the only option the
-    engine's linter reads.
+    ``file``, ``includedBy``
+        ``None`` and ``[]`` for a finding in ``source`` itself.
+
+    ``extensions`` selects the rules, as for rendering. With ``include_root``
+    (and optionally ``source_path``, as for ``render_with_includes``) the pass
+    also lints every included Carve file and reports include directives that
+    stay literal, such as ``include-unresolved`` or ``include-non-text``. Those
+    findings name their root-relative ``file`` and the ``includedBy`` chain of
+    ``{file, line, column}`` sites, top-level first; their ``start`` and
+    ``end`` are ``None``, since the offsets would index another text. The
+    include budgets are accepted as for rendering.
     """
     ...
 

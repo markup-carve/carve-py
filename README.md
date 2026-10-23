@@ -77,6 +77,9 @@ carve.to_carve(source)
 # source unchanged.
 carve.to_carve(source, strict=True)
 
+# `align_tables` pads table cells into aligned columns.
+carve.to_carve(source, align_tables=True)
+
 # Migration returns canonical Carve plus a machine-readable loss report.
 carve.from_html('<p>Hello <strong>world</strong></p>')
 carve.from_markdown('*em* and **strong**')
@@ -125,6 +128,7 @@ Each warning is a dict:
 | `rule` | a stable id, shared with carve-js and carve-php - the same trigger reports the same id in every engine |
 | `message` | what degrades, in prose |
 | `start`, `end` | codepoint offsets into the source, 0-based, end exclusive |
+| `file`, `includedBy` | the included file and its include chain; `None` and `[]` for the source itself |
 
 `start` and `end` slice the offending text directly:
 
@@ -141,11 +145,24 @@ document carrying one non-ASCII character before a warning. The unit follows the
 host language - carve-js converts the same positions to UTF-16 for the same
 reason.
 
-`extensions` is the only option accepted, because it is the only one the
-engine's linter reads:
+Pass the `extensions` you render with; they decide which rules apply:
 
 ```python
 carve.lint(source, extensions=["details"])
+```
+
+Every warning also carries `file` and `includedBy`, `None` and `[]` for a
+finding in the source itself. With `include_root` (and `source_path`, as for
+`render_with_includes`) the pass also lints every included Carve file and
+reports include directives that stay literal, such as `include-unresolved` or
+`include-non-text`. Those findings name their root-relative `file` and the
+`includedBy` chain of `{file, line, column}` sites, top-level first. Their
+`start` and `end` are `None`, since the offsets would index another text. The
+include budgets (`max_depth`, `max_bytes`, `max_resolver_calls`,
+`max_warnings`, `max_file_bytes`) are accepted as for rendering.
+
+```python
+carve.lint(source, include_root="/abs/docs", source_path="book.crv")
 ```
 
 ## The parsed AST
@@ -238,7 +255,8 @@ Each warning carries `rule`, `message` and `file` (the document it arose in,
 root-relative, or `None` for a root document given no `source_path`). The
 engine reports a containment denial and a missing file alike as
 `include-unresolved`, so a warning shown to a reader cannot be used to probe
-the filesystem. `suppressed_warnings` counts the ones past `max_warnings`, so a
+the filesystem. A target that is not text (a NUL byte, or bytes that are not
+valid UTF-8) warns as `include-non-text` and stays literal. `suppressed_warnings` counts the ones past `max_warnings`, so a
 capped report is never read as a clean one.
 
 `target` selects the renderer: `"html"` (default), `"markdown"`, `"plain"` or
@@ -247,6 +265,25 @@ options work as they do on `to_html`, and an extension applies to an included
 child exactly as it does to the parent. The budgets - `max_depth`, `max_bytes`,
 `max_resolver_calls`, `max_warnings` and the per-file `max_file_bytes` - pass
 through to the engine; omit one to keep its default.
+
+### Selecting a region
+
+`carve.select_include_region(source, name, mode)` resolves `@region:name` in a
+file's text with the same marker rules the engine applies during expansion, so
+an editor that jumps to a region agrees with the render. It returns the 1-based,
+inclusive `(start, end)` content lines; an empty region has `end == start - 1`.
+
+```python
+text = "intro\n%% #region setup\na\nb\n%% #endregion\n"
+carve.select_include_region(text, "setup", "carve")  # -> (3, 4)
+```
+
+`mode="carve"` accepts only `%% #region` / `%% #endregion` markers, as a Carve
+include does. `mode="code"` also accepts the source-comment forms (`//`, `--`,
+`/* */`, `<!-- -->`, bare `#region`) of an `@code` include. A missing region or a
+malformed, unpaired or duplicate marker raises `carve.IncludeRegionError`, a
+`ValueError` whose `rule` attribute is `"include-region-invalid"`, the warning
+rule expansion reports for the same file.
 
 ## Symbols
 
@@ -395,6 +432,12 @@ except ValueError as refusal:
 
 A tool that writes the result back to the file wants `strict=True`: without it,
 the one document that could not be formatted is reported as formatted.
+
+`align_tables=True` pads every table's cells so the columns line up, measuring
+by display width (wide CJK characters and emoji count as two columns). Spans,
+continuation rows, row attributes and an authored separator row keep their
+spelling. Formatting the aligned output again without the option gives the
+canonical form back.
 
 ## Write source from AST JSON
 
