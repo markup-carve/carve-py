@@ -8,6 +8,12 @@ therefore get an entry of their own.
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-10-24
+
+### Improvements
+
+- Update to the published carve-rs 0.1.12 engine. Table spans, wrapped attributes, and continuation markers follow the latest spec rules. Markdown output reports four new loss codes: `markdown-container-flattened`, `markdown-caption-flattened`, `markdown-attributes-dropped`, and `raw-html-escaped` (#115).
+
 ## [0.1.10] - 2026-10-23
 
 ### Breaking

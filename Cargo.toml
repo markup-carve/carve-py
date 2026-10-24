@@ -1,6 +1,6 @@
 [package]
 name = "python-carve"
-version = "0.1.10"
+version = "0.1.11"
 edition = "2021"
 description = "Python bindings (PyO3) for the Carve markup language, over the carve-rs engine."
 license = "MIT"
@@ -32,7 +32,7 @@ pyo3 = { version = "0.27", features = ["abi3-py38", "extension-module"] }
 # `carve-lang` (the name `carve` was taken on crates.io).
 #
 # scripts/pinned-spec-commit.py resolves the exact engine revision to its spec corpus.
-carve_rs = { package = "carve-lang", version = "=0.1.11" }
+carve_rs = { package = "carve-lang", version = "=0.1.12" }
 #
 # For local development against a sibling checkout, swap the line above for a
 # path dependency:
