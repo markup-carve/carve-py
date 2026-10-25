@@ -8,6 +8,21 @@ therefore get an entry of their own.
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-10-25
+
+Task lists carry progress and blocked states through the Python binding. Rendering and import follow the 0.1.13 engine fixes.
+
+### Fixes
+
+- List items stay open after line comments. Empty link destinations keep literal tabs, and Markdown destinations keep escaped parentheses (#118).
+- HTML import preserves header rowspans and empty header alignment. Markdown export reports a dropped title on a fence without a language (#118).
+
+### Improvements
+
+- Progress `[/]` and blocked `[!]` tasks render and round trip; `[_]` is accepted as an open task alias (#118).
+
+**Full Changelog**: https://github.com/markup-carve/carve-py/compare/v0.1.11...v0.1.12
+
 ## [0.1.11] - 2026-10-24
 
 ### Improvements
