@@ -1,0 +1,467 @@
+# carve (Python binding)
+
+Native Python bindings for the [Carve](https://markup-carve.github.io/carve/)
+markup language. This package is a thin [PyO3](https://pyo3.rs) binding over the
+Rust implementation [carve-rs](https://github.com/markup-carve/carve-rs),
+so the parser is not reimplemented in Python: every conversion delegates to the
+same engine the Rust CLI and WASM builds use. Output is byte-identical to
+carve-rs for the same input.
+
+This unlocks the Python docs / data ecosystem (MkDocs, Sphinx, Pelican,
+Jupyter/nbconvert) for Carve.
+
+## Install
+
+Wheels are abi3 (`abi3-py38`), so a single wheel covers CPython 3.8+.
+
+From a built wheel:
+
+```bash
+pip install carve-lang
+```
+
+From source (needs a Rust toolchain, 1.75+):
+
+```bash
+pip install maturin
+maturin develop --release      # build + install into the active venv
+# or
+maturin build --release        # produce a wheel under target/wheels/
+```
+
+## Usage
+
+```python
+import carve
+
+print(carve.__version__)
+
+# Core conversion (no extensions)
+html = carve.to_html("# Hello *world*")
+# -> '<section id="Hello-world">\n  <h1>Hello <strong>world</strong></h1>\n</section>'
+
+# Inline emphasis: /italic/ and *bold*
+carve.to_html("/italic/ and *bold*")
+
+# Enable opt-in extensions by name
+html = carve.to_html(source, extensions=["math_block", "list_table"])
+
+# Configure enabled extensions (the mapping is keyword-only)
+html = carve.to_html(
+    source,
+    extensions=["heading-permalinks", "tabs"],
+    extension_options={
+        "heading-permalinks": {"aria_label": "Back to text", "lowercase_ids": True},
+        "tabs": {"mode": "aria"},
+    },
+)
+
+# Dedicated explicit-list variant
+html = carve.to_html_with_extensions(source, ["autolink"])
+
+# Map `:name:` symbols to their values
+carve.to_html("Ship it :rocket:", symbols={"rocket": "🚀"})
+# -> '<p>Ship it 🚀</p>'
+
+# Engine-level options are keyword-only. Omitting one preserves its engine default.
+carve.to_html("# Mixed Case", lowercase_heading_ids=True)
+carve.to_html("Hello @ada", mention_url="https://example.com/{}")
+
+# Other renderers. They take the same engine options and `extension_options`.
+carve.to_markdown(source)
+carve.to_plain_text(source)
+carve.to_ansi(source, lowercase_heading_ids=True)
+carve.to_carve(source)
+
+# `strict` turns a writer refusal into a `ValueError` instead of returning the
+# source unchanged.
+carve.to_carve(source, strict=True)
+
+# `align_tables` pads table cells into aligned columns.
+carve.to_carve(source, align_tables=True)
+
+# Migration returns canonical Carve plus a machine-readable loss report.
+carve.from_html('<p>Hello <strong>world</strong></p>')
+carve.from_markdown('*em* and **strong**')
+
+# Discover supported extension names
+carve.extensions()
+```
+
+Passing an unknown extension name raises `ValueError`.
+`extension_options` only accepts enabled extension names and their documented
+option keys; unknown names, unknown keys, invalid enum values and options for an
+extension that takes none are rejected instead of silently using defaults.
+
+The names come from the engine itself, so `carve.extensions()` is the list this
+build actually accepts rather than a list documented here that could fall behind
+it. They are kebab-case (`math-block`, `table-of-contents`); the snake_case
+spellings this binding has always taken (`math_block`) reach the same
+extensions, so nothing written against the older names has to change.
+
+## Linting
+
+`carve.lint` reports constructs that parse and render, but not the way the
+author meant. The defect class it catches is the silent one: the document
+parses, the renderer emits something, and what the author wrote never reaches
+the page.
+
+```python
+import carve
+
+for warning in carve.lint("{#orphan .cls}\n\n"):
+    print(warning["line"], warning["rule"], warning["message"])
+```
+
+```
+1 unattached-block-attribute This block attribute reaches no block: ...
+```
+
+That one is the clearest case - `{#id .cls}` above a blank line attaches to
+nothing, so the id and the class vanish and nothing anywhere says so.
+
+Each warning is a dict:
+
+| Key | What |
+| --- | --- |
+| `line`, `column` | 1-based, for reporting |
+| `rule` | a stable id, shared with carve-js and carve-php - the same trigger reports the same id in every engine |
+| `message` | what degrades, in prose |
+| `start`, `end` | codepoint offsets into the source, 0-based, end exclusive |
+| `file`, `includedBy` | the included file and its include chain; `None` and `[]` for the source itself |
+
+`start` and `end` slice the offending text directly:
+
+```python
+source = "{#orphan .cls}\n\n"
+warning = carve.lint(source)[0]
+assert source[warning["start"]:warning["end"]] == "{#orphan .cls}"
+```
+
+**They are CODEPOINT offsets, not the byte offsets the Rust API reports.** That
+conversion is deliberate and tested: a Rust caller slices `&str` with bytes, but
+Python slices by codepoint, so passing them through unconverted mis-slices every
+document carrying one non-ASCII character before a warning. The unit follows the
+host language - carve-js converts the same positions to UTF-16 for the same
+reason.
+
+Pass the `extensions` you render with; they decide which rules apply:
+
+```python
+carve.lint(source, extensions=["details"])
+```
+
+Every warning also carries `file` and `includedBy`, `None` and `[]` for a
+finding in the source itself. With `include_root` (and `source_path`, as for
+`render_with_includes`) the pass also lints every included Carve file and
+reports include directives that stay literal, such as `include-unresolved` or
+`include-non-text`. Those findings name their root-relative `file` and the
+`includedBy` chain of `{file, line, column}` sites, top-level first. Their
+`start` and `end` are `None`, since the offsets would index another text. The
+include budgets (`max_depth`, `max_bytes`, `max_resolver_calls`,
+`max_warnings`, `max_file_bytes`) are accepted as for rendering.
+
+```python
+carve.lint(source, include_root="/abs/docs", source_path="book.crv")
+```
+
+## The parsed AST
+
+`carve.parse()` returns the document as Python data - the [PART 12 exchange
+shape](https://markup-carve.github.io/carve/ast-json), the same tree every Carve
+engine publishes, so a consumer written against one implementation reads
+another's output.
+
+```python
+ast = carve.parse("# Title\n\nBody[^a].\n\n[^a]: note\n")
+
+ast["type"]                        # "document"
+[c["type"] for c in ast["children"]]   # ["heading", "paragraph", "footnote"]
+ast["children"][0]["pos"]          # {"startLine": 1, "startColumn": 1, ...}
+
+carve.parse_json(source)  # the same tree, as JSON bytes
+```
+
+The root carries exactly `type`, `children` and `srcByteLength`; frontmatter and
+footnote definitions are block nodes inside `children`, not root fields. Every
+node except the root carries `pos` when the engine could place it - 1-based
+lines and columns, 0-based offsets, ends exclusive, counted in Unicode
+**codepoints**, not bytes. A node the engine could not place, such as
+reassembled table-cell text, carries no `pos` at all rather than an invented
+one.
+
+The serialization is the engine's own, so this binding publishes byte-identical
+output to the `carve --json` CLI and to every other binding over carve-rs.
+
+Every rendering entry point (`to_html`, `to_html_with_extensions`, `to_markdown`,
+`to_plain_text`, `to_ansi`, `parse` and `parse_json`) also accepts keyword-only
+`lowercase_heading_ids`, `positions`, `sections`, `source_lines`, `mention_url`,
+`tag_url`, and `profile_base_host`. Boolean options accept `True` or `False`;
+URL/host options accept strings. When omitted, each option retains the engine's
+own default.
+
+The keyword set is the same on every target so a host does not have to remember
+which target takes which. Most of these options describe HTML markup, so on
+`to_markdown` / `to_plain_text` / `to_ansi` they have nothing to change;
+`lowercase_heading_ids` does change those three, because all four renderers
+resolve `</#id>` crossrefs through the same heading index.
+
+## Includes
+
+`carve.render_with_includes()` renders a file-backed document with its
+`{{ path }}` includes expanded, contained to a root you name:
+
+```python
+import carve
+
+result = carve.render_with_includes(
+    open("book/main.crv").read(),
+    "/srv/book",                  # containment root, absolute
+    source_path="main.crv",       # or absolute; relative is read from the root
+)
+result["output"]        # the rendered HTML
+result["dependencies"]  # every target touched, for a watcher
+result["warnings"]      # what degraded, and where
+```
+
+The string entry points (`to_html` and friends) take no root and expand
+nothing - a directive stays literal there, so a caller who never opted in never
+touches the filesystem.
+
+**`safe=True` turns includes off.** Every directive stays literal, nothing is
+read, and `warnings` and `dependencies` come back empty, as with carve-rs
+`--safe` and carve-js and carve-php. The root is not even opened, so an
+untrusted document rendered with `safe=True` cannot reach a file.
+
+**The root must be absolute.** A relative value names no root: every
+canonicalizer resolves one against the process working directory, which is
+arbitrary with respect to the document, so `include_root=".."` would silently
+root containment at the parent of wherever the build ran. It raises
+`ValueError` instead. Absolutize it yourself if you have a relative directory
+in hand, where the decision is visible.
+
+Nothing resolves outside the root. A `../` climb, a symlink pointing out, and
+an absolute path are all refused after canonicalization, so a path that leaves
+the root by any spelling is denied rather than read.
+
+Each dependency is a dict:
+
+| Key | What |
+| --- | --- |
+| `id` | the target, relative to the root |
+| `resolved` | the source **was read** - not that it was merged |
+| `denial` | the refusal class, or `None`: `outside-root`, `not-found`, `no-root`, `include-denied`, `include-unresolved` |
+
+Refused targets are listed too. A host that watched only what it read would
+never learn that a missing target now exists, so the preview would stay stale
+at the moment the author fixes it.
+
+Each warning carries `rule`, `message` and `file` (the document it arose in,
+root-relative, or `None` for a root document given no `source_path`). The
+engine reports a containment denial and a missing file alike as
+`include-unresolved`, so a warning shown to a reader cannot be used to probe
+the filesystem. A target that is not text (a NUL byte, or bytes that are not
+valid UTF-8) warns as `include-non-text` and stays literal. `suppressed_warnings` counts the ones past `max_warnings`, so a
+capped report is never read as a clean one.
+
+`target` selects the renderer: `"html"` (default), `"markdown"`, `"plain"` or
+`"ansi"`. `extensions`, `profile`, `symbols`, `renderers` and the engine
+options work as they do on `to_html`, and an extension applies to an included
+child exactly as it does to the parent. The budgets - `max_depth`, `max_bytes`,
+`max_resolver_calls`, `max_warnings` and the per-file `max_file_bytes` - pass
+through to the engine; omit one to keep its default.
+
+### Selecting a region
+
+`carve.select_include_region(source, name, mode)` resolves `@region:name` in a
+file's text with the same marker rules the engine applies during expansion, so
+an editor that jumps to a region agrees with the render. It returns the 1-based,
+inclusive `(start, end)` content lines; an empty region has `end == start - 1`.
+
+```python
+text = "intro\n%% #region setup\na\nb\n%% #endregion\n"
+carve.select_include_region(text, "setup", "carve")  # -> (3, 4)
+```
+
+`mode="carve"` accepts only `%% #region` / `%% #endregion` markers, as a Carve
+include does. `mode="code"` also accepts the source-comment forms (`//`, `--`,
+`/* */`, `<!-- -->`, bare `#region`) of an `@code` include. A missing region or a
+malformed, unpaired or duplicate marker raises `carve.IncludeRegionError`, a
+`ValueError` whose `rule` attribute is `"include-region-invalid"`, the warning
+rule expansion reports for the same file.
+
+## Symbols
+
+A `:name:` symbol renders its literal `:name:` source unless the name is in the
+**symbols map** passed as the `symbols=` keyword (supported by `to_html` and
+`to_html_with_extensions`):
+
+```python
+carve.to_html("Ship it :rocket: :shrug:", symbols={"rocket": "🚀"})
+# -> '<p>Ship it 🚀 :shrug:</p>'   (an unmapped name stays literal)
+```
+
+The leading word-boundary guard is unaffected by an active map: `a:b:c`,
+`10:30:` and `me@example.com` never become symbols.
+
+> **Security: symbol values are TRUSTED RAW output.**
+> A mapped value is inserted into the output **unescaped** - the same trust
+> class as a `renderers` callable. `symbols={"b": "<b>x</b>"}` emits a real
+> `<b>` element, not escaped text. This is deliberate (processor configuration
+> is trusted). **Never build a symbols map out of untrusted / user-supplied
+> input.**
+
+## Untrusted input
+
+Carve's normative hardening is always on and needs no argument: dangerous URL
+schemes are blanked, event-handler attributes like `onclick` are dropped, and the
+bidi override/isolate characters behind Trojan Source are removed from rendered
+text.
+
+Raw passthrough is the deliberate exception. A ` ```=html ` block or a
+`` `…`{=html} `` span renders **verbatim** by design, so it is the one thing
+input you did not author has to switch off:
+
+``` python
+html = carve.to_html(user_input, safe=True, profile="comment")
+```
+
+`safe=True` escapes those raw blocks and spans instead of emitting them. It is
+HTML-only, because HTML is the only target that can emit live markup:
+`to_markdown` escapes raw HTML, `to_plain_text` drops it, `to_ansi` keeps it as
+terminal text.
+
+`profile` restricts which constructs are allowed at all and caps input length -
+`"full"`, `"article"`, `"comment"`, `"minimal"`, or `None`. It applies to every
+target, including `to_markdown` / `to_plain_text` / `to_ansi`.
+
+An unknown profile name raises `ValueError`, and so does a **rejection** - input
+past the profile's max length, or a denied construct when the action is error:
+
+``` python
+carve.to_html("x" * 20_000, profile="minimal")
+# ValueError: Profile violations: 'document' is not allowed: max_length_exceeded (...)
+```
+
+It raises rather than returning something that looks like output: the engine's
+infallible entry point answers a rejection with an empty string, which a caller
+cannot tell from a document that legitimately rendered to nothing.
+
+An engine **panic** raises `carve.EnginePanicError`, an `Exception` subclass.
+A panic means the engine reached a state it believed impossible, so the document
+is not renderable, but the interpreter is unaffected and a host can answer the
+request instead of losing the worker:
+
+``` python
+try:
+    html = carve.to_html(user_input, safe=True, profile="comment")
+except carve.EnginePanicError as panic:
+    logger.error("carve engine panic: %s", panic)
+    html = "<p>This document could not be rendered.</p>"
+```
+
+Before it existed, PyO3 raised its own `PanicException`, which derives from
+`BaseException`, so the `except Exception` a host actually writes walked past it
+(#94). The message carries the panic text and its location in the engine source,
+and the usual `thread '<unnamed>' panicked at ...` report still reaches stderr,
+so `RUST_BACKTRACE=1` works as before. Treat any input that raises it as an
+engine defect worth reporting, not as a rejection: a rejection is a `ValueError`.
+
+Full recipe, defaults and threat model:
+[Security](https://markup-carve.github.io/carve/security).
+
+## Stored documents and spec versions
+
+`carve fmt --stamp` (in any Carve engine) records the spec version a document was
+last processed under. This binding reads that marker back, so a repository of
+stored `.crv` files can be checked for documents predating a breaking spec
+change:
+
+``` python
+carve.read_stamp(source)
+# {'version': '0.1', 'generated_by': 'carve-php 0.1.0'}
+
+carve.needs_review(source)   # True when the document predates this engine
+```
+
+An **unstamped** document answers `True`: its provenance is unknown, and assuming
+it is current is the unsafe direction. Both marker forms are read, and a marker
+written by any engine reads the same - the format is the contract, not any one
+API.
+
+What a version difference means is the
+[versioning contract](https://markup-carve.github.io/carve/versioning): only
+`[behavior]` changelog entries between the stamped version and yours can require
+a document change.
+
+## Supported extensions
+
+The string passed in `extensions=[...]` maps to a carve-rs extension:
+
+| name                 | effect                                              |
+|----------------------|-----------------------------------------------------|
+| `autolink`           | turn bare URLs into links                            |
+| `details`            | collapsible `<details>` blocks                       |
+| `external_links`     | mark external links (rel/target)                     |
+| `fenced_render`      | render fenced blocks of a target language (mermaid)  |
+| `fenced_render_chart`| render fenced `chart` blocks (Chart.js)              |
+| `fenced_render_plantuml` | render `plantuml`/`puml` blocks (Kroki client)   |
+| `fenced_render_graphviz` | render `dot`/`graphviz` blocks                   |
+| `fenced_render_d2`   | render `d2` blocks                                   |
+| `fenced_render_wavedrom` | render `wavedrom` blocks                         |
+| `fenced_render_vega_lite`| render `vega-lite` blocks (Vega-Lite)            |
+| `fenced_render_abc`  | render `abc` music-notation blocks                   |
+| `heading_permalinks` | add permalink anchors to headings                    |
+| `list_table`         | build tables from nested lists                        |
+| `math_block`         | fenced math blocks                                   |
+| `spoiler`            | spoiler / hidden-content inline                       |
+| `tab_normalize`      | normalize tab indentation                            |
+| `wikilinks`          | `[[wiki style]]` links                               |
+| `citations`          | citation references                                  |
+| `code-callouts`      | numbered callouts in fenced code blocks              |
+
+## Formatting source
+
+`carve.to_carve(source)` writes the engine's canonical spelling of a document.
+The writer can refuse a tree it cannot spell back, and by default that refusal
+comes back as the source as authored - the same value a document that was
+already canonical returns, so a caller cannot tell the two apart. Pass
+`strict=True` to get the refusal as a `ValueError`:
+
+```python
+try:
+    formatted = carve.to_carve(source, strict=True)
+except ValueError as refusal:
+    print(f"left as authored: {refusal}")
+```
+
+A tool that writes the result back to the file wants `strict=True`: without it,
+the one document that could not be formatted is reported as formatted.
+
+`align_tables=True` pads every table's cells so the columns line up, measuring
+by display width (wide CJK characters and emoji count as two columns). Spans,
+continuation rows, row attributes and an authored separator row keep their
+spelling. Formatting the aligned output again without the option gives the
+canonical form back.
+
+## Write source from AST JSON
+
+`carve.render_ast_json(json_text)` validates an interchange tree through the
+native engine and writes Carve source. Invalid JSON, unknown node kinds, and
+unspellable trees raise `ValueError`.
+
+```python
+import json
+import carve
+
+source = carve.render_ast_json(json.dumps({
+    "type": "document",
+    "srcByteLength": 0,
+    "children": [{"type": "paragraph", "children": [
+        {"type": "text", "value": "*literal text*"}
+    ]}]
+}))
+```
+
+Docling conversion is maintained in the separate
+[docling-carve](https://github.com/markup-carve/docling-carve) package.
