@@ -1342,6 +1342,13 @@ fn parse(
     })
 }
 
+/// The block decision trace as JSON lines: a header record, then one record
+/// per source line from the ownership walk.
+#[pyfunction]
+fn decision_trace(source: Source) -> PyResult<String> {
+    guard(move || Ok(carve_rs::decision_trace(&source.0)))
+}
+
 /// Return the list of supported extension names.
 ///
 /// Taken from the engine's registry, so a new extension in carve-rs is
@@ -1374,7 +1381,7 @@ fn parse(
 /// `includedBy` chain, top-level first, and `start`/`end` of `None`, since the
 /// offsets would index another text.
 #[pyfunction]
-#[pyo3(signature = (source, extensions = None, *, include_root = None, source_path = None, allow_absolute = false, max_file_bytes = None, max_depth = None, max_bytes = None, max_resolver_calls = None, max_warnings = None))]
+#[pyo3(signature = (source, extensions = None, *, include_root = None, source_path = None, allow_absolute = false, max_file_bytes = None, max_depth = None, max_bytes = None, max_resolver_calls = None, max_warnings = None, caption_hints = false))]
 #[allow(clippy::too_many_arguments)]
 fn lint(
     py: Python<'_>,
@@ -1388,6 +1395,7 @@ fn lint(
     max_bytes: Option<usize>,
     max_resolver_calls: Option<usize>,
     max_warnings: Option<usize>,
+    caption_hints: bool,
 ) -> PyResult<Vec<Py<PyDict>>> {
     guard(move || {
         let source = source.0;
@@ -1398,6 +1406,7 @@ fn lint(
         for ext in &owned {
             options = options.with_extension(ext.as_ref());
         }
+        options.lint_caption_looking_paragraph = caption_hints;
         // The document's own findings come first and are the only ones whose
         // offsets index `source`, so they are counted from a run without includes.
         let own = carve_rs::lint_carve_with_options(source, &options);
@@ -1788,6 +1797,7 @@ fn carve(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(needs_review, m)?)?;
     m.add_function(wrap_pyfunction!(parse, m)?)?;
     m.add_function(wrap_pyfunction!(parse_json, m)?)?;
+    m.add_function(wrap_pyfunction!(decision_trace, m)?)?;
     m.add_function(wrap_pyfunction!(lint, m)?)?;
     m.add_function(wrap_pyfunction!(render_with_includes, m)?)?;
     m.add_function(wrap_pyfunction!(select_include_region, m)?)?;
