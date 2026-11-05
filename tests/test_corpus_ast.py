@@ -75,8 +75,10 @@ def _walk(node, visit):
     if isinstance(node, dict):
         if "type" in node:
             visit(node)
-        for value in node.values():
-            _walk(value, visit)
+        for key, value in node.items():
+            # An attribute map is author data: `{type=text}` is not a node.
+            if key != "keyValues":
+                _walk(value, visit)
     elif isinstance(node, list):
         for value in node:
             _walk(value, visit)
@@ -196,3 +198,9 @@ def test_the_schema_check_can_fail():
         key: value for key, value in defs["text"]["properties"].items() if key != "value"
     }
     assert "text.value: not a property the schema names" in _schema_findings(defs)
+
+
+def test_an_attribute_named_type_is_not_a_node():
+    seen = []
+    _walk(carve.parse("{type=text}\na.  alpha\n"), lambda n: seen.append(n["type"]))
+    assert seen == ["document", "list", "list_item", "paragraph", "text"]

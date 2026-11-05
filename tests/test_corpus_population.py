@@ -59,3 +59,24 @@ def test_one_block_holding_three_pairs(tmp_path):
 def test_invalid_source_is_refused(tmp_path, source):
     with pytest.raises(AssertionError):
         declared_corpus_size(source_tree(tmp_path, source))
+
+
+def test_edge_case_sections_in_their_own_files(tmp_path):
+    examples = tmp_path / "resources" / "examples"
+    sections = examples / "edge-cases"
+    sections.mkdir(parents=True)
+    (examples / "core.md").write_text(THREE_PAIRS, encoding="utf-8")
+    (examples / "extensions.md").write_text("", encoding="utf-8")
+    (sections / "README.md").write_text(THREE_PAIRS, encoding="utf-8")
+    (sections / "0002-second.md").write_text(SOURCE, encoding="utf-8")
+    (sections / "0001-first.md").write_text("---\npage: tables\n---\n\n" + THREE_PAIRS, encoding="utf-8")
+    assert declared_corpus_size(tmp_path / "tests" / "corpus") == 8
+
+
+def test_an_empty_section_directory_is_refused(tmp_path):
+    examples = tmp_path / "resources" / "examples"
+    (examples / "edge-cases").mkdir(parents=True)
+    (examples / "core.md").write_text(THREE_PAIRS, encoding="utf-8")
+    (examples / "extensions.md").write_text("", encoding="utf-8")
+    with pytest.raises(pytest.fail.Exception):
+        declared_corpus_size(tmp_path / "tests" / "corpus")

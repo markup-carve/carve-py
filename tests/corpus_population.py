@@ -21,8 +21,10 @@ guard would still pass.
 
 So the reference is the corpus's SOURCE, not the corpus. ``tests/corpus`` is
 generated from the ``::: compare`` blocks in
-``resources/examples/{core,extensions,edge-cases}.md`` (see
-``scripts/generate-corpus.mjs`` in the spec repository), and the generator
+``resources/examples/{core,extensions}.md`` plus the edge-case sections (one
+``edge-cases.md`` page up to spec 0.1.13, one ``edge-cases/NNNN-slug.md`` file
+per section after it; see ``scripts/lib/example-sections.mjs`` in the spec
+repository), and the generator
 refuses to write a corpus where the two disagree. Both live in the same spec
 checkout CI already clones, one directory away from ``CARVE_SPEC_CORPUS`` - the
 same route ``test_corpus_ast.py`` already takes to ``resources/ast-schema.json``.
@@ -41,11 +43,43 @@ import pytest
 # The pages the corpus is generated from, in the order the generator reads them.
 # Order is irrelevant to a count; the list is the generator's.
 EXAMPLE_PAGES = ("core.md", "extensions.md", "edge-cases.md")
+SECTION_DIR = "edge-cases"
 
 # Mirrors the generator: `::: compare`, or a longer colon run, with optional
 # modifiers such as `::: compare no-render`.
 _COMPARE_OPEN = re.compile(r"^:{3,}\s+compare(\s+\S.*)?$")
 _MARKER_RUN = re.compile(r"^:{3,}")
+
+
+def example_pages(examples_dir):
+    """The source pages in the spec's reading order.
+
+    The spec split ``edge-cases.md`` into ``edge-cases/NNNN-slug.md`` after
+    0.1.13; either layout is read, the single page when it exists.
+    """
+    examples_dir = pathlib.Path(examples_dir)
+    pages = [examples_dir / page for page in EXAMPLE_PAGES[:2]]
+    single = examples_dir / EXAMPLE_PAGES[2]
+    sections = examples_dir / SECTION_DIR
+    if single.exists() or not sections.is_dir():
+        return pages + [single]
+    files = [f for f in sections.glob("*.md") if f.name != "README.md"]
+    if not files:
+        pytest.fail(f"{sections} holds no section files; the corpus source is incomplete")
+    return pages + sorted(files, key=_section_order)
+
+
+def _section_order(path):
+    number = re.match(r"^(\d{4,})-", path.name)
+    return (int(number.group(1)) if number else float("inf"), path.name)
+
+
+def _section_body(text):
+    # A section file may open with `page:` front matter, which is not section content.
+    lines = text.split("\n")
+    if lines[0] != "---" or "---" not in lines[1:]:
+        return text
+    return "\n".join(lines[lines.index("---", 1) + 1:])
 
 
 def declared_corpus_size(corpus_dir):
@@ -59,8 +93,7 @@ def declared_corpus_size(corpus_dir):
     """
     examples_dir = pathlib.Path(corpus_dir).parent.parent / "resources" / "examples"
     declared = 0
-    for page in EXAMPLE_PAGES:
-        path = examples_dir / page
+    for path in example_pages(examples_dir):
         if not path.exists():
             # Not a soft skip. Without this file there is no independent
             # statement of how big the corpus should be, and a corpus check with
@@ -73,7 +106,7 @@ def declared_corpus_size(corpus_dir):
         marker = None
         fence = None
         counts = {"carve": 0, "html": 0}
-        for line in path.read_text(encoding="utf-8").split("\n"):
+        for line in _section_body(path.read_text(encoding="utf-8")).split("\n"):
             if fence is not None:
                 if line.startswith(fence) and not line[len(fence):].strip():
                     fence = None
@@ -120,7 +153,7 @@ def require_whole_corpus(corpus_dir, got, what):
     declared = declared_corpus_size(corpus_dir)
     assert got == declared, (
         f"{what}: {got}, but the spec's example pages declare {declared}. Every "
-        "::: compare block in resources/examples/{core,extensions,edge-cases}.md becomes "
+        "::: compare block in resources/examples/{core,extensions}.md and the edge-case sections becomes "
         f"its declared fence pairs, so a difference means the corpus at {corpus_dir} is not the one "
         "those pages describe - a truncated or stale checkout, a wrong CARVE_SPEC_CORPUS, "
         "or a corpus that needs regenerating (npm run corpus:build in the spec repository). "
