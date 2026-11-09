@@ -89,10 +89,12 @@ def declared_corpus_size(corpus_dir):
 
     Count Carve and HTML fences independently of generated files. Each
     compare block must contain equal, nonzero counts. Literal fenced content
-    cannot open or close a compare block.
+    cannot open or close a compare block. Pairs whose Carve input is identical
+    count once: the generator writes one fixture per input (carve#5244).
     """
     examples_dir = pathlib.Path(corpus_dir).parent.parent / "resources" / "examples"
     declared = 0
+    inputs = set()
     for path in example_pages(examples_dir):
         if not path.exists():
             # Not a soft skip. Without this file there is no independent
@@ -104,12 +106,19 @@ def declared_corpus_size(corpus_dir):
                 "pages; if the spec moved them, this helper has to move with them"
             )
         marker = None
+        modifiers = ()
         fence = None
+        body = None
         counts = {"carve": 0, "html": 0}
         for line in _section_body(path.read_text(encoding="utf-8")).split("\n"):
             if fence is not None:
                 if line.startswith(fence) and not line[len(fence):].strip():
                     fence = None
+                    if body is not None:
+                        inputs.add(_fixture_input("\n".join(body), modifiers))
+                        body = None
+                elif body is not None:
+                    body.append(line)
                 continue
             opening = re.match(r"^(`{3,})(.*)$", line)
             if opening:
@@ -117,6 +126,8 @@ def declared_corpus_size(corpus_dir):
                 language = opening.group(2).strip()
                 if marker is not None and language in counts:
                     counts[language] += 1
+                    if language == "carve":
+                        body = []
                 continue
             trimmed = line.strip()
             if marker is not None:
@@ -129,6 +140,7 @@ def declared_corpus_size(corpus_dir):
                 continue
             if _COMPARE_OPEN.match(trimmed):
                 marker = _MARKER_RUN.match(trimmed).group(0)
+                modifiers = tuple(trimmed.split()[2:])
                 counts = {"carve": 0, "html": 0}
         assert marker is None and fence is None, f"unclosed compare block or fence in {path}"
     if declared == 0:
@@ -136,7 +148,23 @@ def declared_corpus_size(corpus_dir):
             f"the corpus source pages under {examples_dir} declare no ::: compare blocks "
             "at all; this is a wiring problem, not a corpus of size zero"
         )
-    return declared
+    return len(inputs)
+
+
+def _fixture_input(carve, modifiers):
+    """The fixture bytes the generator writes for one pair (its applyModifiers)."""
+    out = carve + "\n"
+    if "no-final-newline" in modifiers:
+        out = out[:-1]
+    if "crlf" in modifiers:
+        out = out.replace("\n", "\r\n")
+    if "cr" in modifiers:
+        out = out.replace("\n", "\r")
+    if "bom" in modifiers:
+        out = "\ufeff" + out
+    if "nul" in modifiers:
+        out = out.replace("\u2400", "\u0000")
+    return out
 
 
 def require_whole_corpus(corpus_dir, got, what):
