@@ -21,8 +21,10 @@ guard would still pass.
 
 So the reference is the corpus's SOURCE, not the corpus. ``tests/corpus`` is
 generated from the ``::: compare`` blocks in
-``resources/examples/{core,extensions,edge-cases}.md`` (see
-``scripts/generate-corpus.mjs`` in the spec repository), and the generator
+``resources/examples/{core,extensions}.md`` plus the edge-case sections (one
+``edge-cases.md`` page up to spec 0.1.13, one ``edge-cases/NNNN-slug.md`` file
+per section after it; see ``scripts/lib/example-sections.mjs`` in the spec
+repository), and the generator
 refuses to write a corpus where the two disagree. Both live in the same spec
 checkout CI already clones, one directory away from ``CARVE_SPEC_CORPUS`` - the
 same route ``test_corpus_ast.py`` already takes to ``resources/ast-schema.json``.
@@ -41,11 +43,43 @@ import pytest
 # The pages the corpus is generated from, in the order the generator reads them.
 # Order is irrelevant to a count; the list is the generator's.
 EXAMPLE_PAGES = ("core.md", "extensions.md", "edge-cases.md")
+SECTION_DIR = "edge-cases"
 
 # Mirrors the generator: `::: compare`, or a longer colon run, with optional
 # modifiers such as `::: compare no-render`.
 _COMPARE_OPEN = re.compile(r"^:{3,}\s+compare(\s+\S.*)?$")
 _MARKER_RUN = re.compile(r"^:{3,}")
+
+
+def example_pages(examples_dir):
+    """The source pages in the spec's reading order.
+
+    The spec split ``edge-cases.md`` into ``edge-cases/NNNN-slug.md`` after
+    0.1.13; either layout is read, the single page when it exists.
+    """
+    examples_dir = pathlib.Path(examples_dir)
+    pages = [examples_dir / page for page in EXAMPLE_PAGES[:2]]
+    single = examples_dir / EXAMPLE_PAGES[2]
+    sections = examples_dir / SECTION_DIR
+    if single.exists() or not sections.is_dir():
+        return pages + [single]
+    files = [f for f in sections.glob("*.md") if f.name != "README.md"]
+    if not files:
+        pytest.fail(f"{sections} holds no section files; the corpus source is incomplete")
+    return pages + sorted(files, key=_section_order)
+
+
+def _section_order(path):
+    number = re.match(r"^(\d{4,})-", path.name)
+    return (int(number.group(1)) if number else float("inf"), path.name)
+
+
+def _section_body(text):
+    # A section file may open with `page:` front matter, which is not section content.
+    lines = text.split("\n")
+    if lines[0] != "---" or "---" not in lines[1:]:
+        return text
+    return "\n".join(lines[lines.index("---", 1) + 1:])
 
 
 def declared_corpus_size(corpus_dir):
@@ -55,12 +89,13 @@ def declared_corpus_size(corpus_dir):
 
     Count Carve and HTML fences independently of generated files. Each
     compare block must contain equal, nonzero counts. Literal fenced content
-    cannot open or close a compare block.
+    cannot open or close a compare block. Pairs whose Carve input is identical
+    count once: the generator writes one fixture per input (carve#5244).
     """
     examples_dir = pathlib.Path(corpus_dir).parent.parent / "resources" / "examples"
     declared = 0
-    for page in EXAMPLE_PAGES:
-        path = examples_dir / page
+    inputs = set()
+    for path in example_pages(examples_dir):
         if not path.exists():
             # Not a soft skip. Without this file there is no independent
             # statement of how big the corpus should be, and a corpus check with
@@ -71,12 +106,19 @@ def declared_corpus_size(corpus_dir):
                 "pages; if the spec moved them, this helper has to move with them"
             )
         marker = None
+        modifiers = ()
         fence = None
+        body = None
         counts = {"carve": 0, "html": 0}
-        for line in path.read_text(encoding="utf-8").split("\n"):
+        for line in _section_body(path.read_text(encoding="utf-8")).split("\n"):
             if fence is not None:
                 if line.startswith(fence) and not line[len(fence):].strip():
                     fence = None
+                    if body is not None:
+                        inputs.add(_fixture_input("\n".join(body), modifiers))
+                        body = None
+                elif body is not None:
+                    body.append(line)
                 continue
             opening = re.match(r"^(`{3,})(.*)$", line)
             if opening:
@@ -84,6 +126,8 @@ def declared_corpus_size(corpus_dir):
                 language = opening.group(2).strip()
                 if marker is not None and language in counts:
                     counts[language] += 1
+                    if language == "carve":
+                        body = []
                 continue
             trimmed = line.strip()
             if marker is not None:
@@ -96,6 +140,7 @@ def declared_corpus_size(corpus_dir):
                 continue
             if _COMPARE_OPEN.match(trimmed):
                 marker = _MARKER_RUN.match(trimmed).group(0)
+                modifiers = tuple(trimmed.split()[2:])
                 counts = {"carve": 0, "html": 0}
         assert marker is None and fence is None, f"unclosed compare block or fence in {path}"
     if declared == 0:
@@ -103,7 +148,23 @@ def declared_corpus_size(corpus_dir):
             f"the corpus source pages under {examples_dir} declare no ::: compare blocks "
             "at all; this is a wiring problem, not a corpus of size zero"
         )
-    return declared
+    return len(inputs)
+
+
+def _fixture_input(carve, modifiers):
+    """The fixture bytes the generator writes for one pair (its applyModifiers)."""
+    out = carve + "\n"
+    if "no-final-newline" in modifiers:
+        out = out[:-1]
+    if "crlf" in modifiers:
+        out = out.replace("\n", "\r\n")
+    if "cr" in modifiers:
+        out = out.replace("\n", "\r")
+    if "bom" in modifiers:
+        out = "\ufeff" + out
+    if "nul" in modifiers:
+        out = out.replace("\u2400", "\u0000")
+    return out
 
 
 def require_whole_corpus(corpus_dir, got, what):
@@ -120,7 +181,7 @@ def require_whole_corpus(corpus_dir, got, what):
     declared = declared_corpus_size(corpus_dir)
     assert got == declared, (
         f"{what}: {got}, but the spec's example pages declare {declared}. Every "
-        "::: compare block in resources/examples/{core,extensions,edge-cases}.md becomes "
+        "::: compare block in resources/examples/{core,extensions}.md and the edge-case sections becomes "
         f"its declared fence pairs, so a difference means the corpus at {corpus_dir} is not the one "
         "those pages describe - a truncated or stale checkout, a wrong CARVE_SPEC_CORPUS, "
         "or a corpus that needs regenerating (npm run corpus:build in the spec repository). "

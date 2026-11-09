@@ -8,6 +8,7 @@ region expectations were taken from carve-rs `select_include_region` directly.
 import json
 import os
 import pathlib
+import re
 
 import carve
 import pytest
@@ -24,6 +25,10 @@ def _alignment_rows():
 
 ROWS = _alignment_rows()
 
+# A roundtrip row keeps a GFM separator only under a roundtrip writer; the
+# canonical writer bound here writes native `|=` headers (CARVE-P11-066).
+GFM_SEPARATOR = re.compile(r"^\|(\s*:?-+:?\s*\|)+\s*$", re.M)
+
 needs_spec = pytest.mark.skipif(
     not CORPUS, reason="CARVE_SPEC_CORPUS not set (see .github/workflows/ci.yml)"
 )
@@ -37,6 +42,12 @@ def test_alignment_fixtures_are_present():
 @needs_spec
 @pytest.mark.parametrize("row", ROWS, ids=[row["name"] for row in ROWS])
 def test_align_tables_matches_the_shared_fixture(row):
+    if GFM_SEPARATOR.search(row["canonical"]):
+        written = carve.to_carve(row["canonical"], align_tables=True)
+        assert not GFM_SEPARATOR.search(written)
+        assert carve.to_carve(written, align_tables=True) == written
+        assert carve.to_html(written) == carve.to_html(row["canonical"])
+        return
     assert carve.to_carve(row["canonical"], align_tables=True) == row["aligned"]
     assert carve.to_carve(row["canonical"], strict=True, align_tables=True) == row["aligned"]
 
@@ -44,6 +55,9 @@ def test_align_tables_matches_the_shared_fixture(row):
 @needs_spec
 @pytest.mark.parametrize("row", ROWS, ids=[row["name"] for row in ROWS])
 def test_aligned_output_formats_back_to_canonical(row):
+    if GFM_SEPARATOR.search(row["canonical"]):
+        assert carve.to_carve(row["aligned"]) == carve.to_carve(row["canonical"])
+        return
     assert carve.to_carve(row["aligned"]) == row["canonical"]
 
 

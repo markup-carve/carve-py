@@ -337,6 +337,7 @@ def lint(
     max_bytes: Optional[int] = None,
     max_resolver_calls: Optional[int] = None,
     max_warnings: Optional[int] = None,
+    caption_hints: bool = False,
 ) -> List[Dict[str, Any]]:
     """Report constructs that parse and render, but not the way the author meant.
 
@@ -373,7 +374,18 @@ def lint(
     findings name their root-relative ``file`` and the ``includedBy`` chain of
     ``{file, line, column}`` sites, top-level first; their ``start`` and
     ``end`` are ``None``, since the offsets would index another text. The
-    include budgets are accepted as for rendering.
+    include budgets are accepted as for rendering. ``caption_hints`` adds the
+    opt-in ``caption-looking-paragraph`` hint for a paragraph beside an image
+    or table that reads like a caption.
+    """
+    ...
+
+def decision_trace(source: str) -> str:
+    """The block decision trace as JSON lines.
+
+    The first line is the header
+    ``{"trace":"carve-decision-trace","version":1,"engine":"carve-rs"}``; each
+    following line records the ownership walk's decision for one source line.
     """
     ...
 

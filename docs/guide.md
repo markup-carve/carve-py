@@ -165,6 +165,25 @@ include budgets (`max_depth`, `max_bytes`, `max_resolver_calls`,
 carve.lint(source, include_root="/abs/docs", source_path="book.crv")
 ```
 
+`caption_hints=True` adds the opt-in `caption-looking-paragraph` hint: a
+paragraph beside an image or table that reads like a caption but is not a `^`
+caption line.
+
+## Decision trace
+
+`carve.decision_trace(source)` returns the block decision trace as JSON lines:
+a header record, then one record per source line naming the layout step, the
+owning container and the clause that decided it. It is a debugging aid for
+"why did this line end up there"; the format is versioned by the header.
+
+```python
+import json
+import carve
+
+for line in carve.decision_trace("- a\n  b\n").splitlines():
+    print(json.loads(line))
+```
+
 ## The parsed AST
 
 `carve.parse()` returns the document as Python data - the [PART 12 exchange
@@ -438,11 +457,17 @@ except ValueError as refusal:
 A tool that writes the result back to the file wants `strict=True`: without it,
 the one document that could not be formatted is reported as formatted.
 
+The canonical spelling writes every thematic break as `***`, table headers as
+native `|=` cells and cell alignment in braces (`|={<}`, `|={~}`, `|={>}` on
+header cells, `|{>}` on body cells). The 0.1.13 glued markers (`|=>`) and a GFM
+separator row are still read and are rewritten to that form; `carve.lint`
+reports them as `deprecated-cell-alignment` and other break spellings as
+`thematic-break-spelling`.
+
 `align_tables=True` pads every table's cells so the columns line up, measuring
 by display width (wide CJK characters and emoji count as two columns). Spans,
-continuation rows, row attributes and an authored separator row keep their
-spelling. Formatting the aligned output again without the option gives the
-canonical form back.
+continuation rows and row attributes keep their spelling. Formatting the
+aligned output again without the option gives the canonical form back.
 
 ## Write source from AST JSON
 

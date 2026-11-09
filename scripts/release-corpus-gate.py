@@ -190,7 +190,12 @@ def main():
     mismatches = []
     for source, expected in pairs:
         want = expected.read_text(encoding="utf-8").rstrip("\n")
-        got = carve.to_html(source.read_text(encoding="utf-8")).rstrip("\n")
+        try:
+            got = carve.to_html(source.read_text(encoding="utf-8")).rstrip("\n")
+        except carve.EnginePanicError as panic:
+            # A panic is one more divergence; aborting would leave the rest unmeasured.
+            mismatches.append(f"{source.stem} (engine panic: {str(panic).splitlines()[0]})")
+            continue
         if got != want:
             mismatches.append(source.stem)
 
