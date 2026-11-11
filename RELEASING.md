@@ -105,3 +105,11 @@ the upload, which is guarded on a tag ref.
 The engine is carve-rs, built from the exact `carve-lang` version recorded in
 `Cargo.lock`. That version is what a release ships, so treat an engine bump as a
 release-worthy change: the same Python code can render differently underneath.
+
+The corpus gate holds the wheel to the spec commit in `spec-corpus-revision.txt`.
+Where the pinned carve-rs itself declares a corpus pair behind or ahead
+(`BEHIND_ON_PAIR` and `AHEAD_OF_PIN` in its `tests/corpus.rs`), the wheel must
+render exactly the HTML the engine declares. `engine-behind.txt` carries that
+list; after an engine bump, regenerate it with
+`python3 scripts/check-engine-behind.py --engine <carve-rs checkout> --write`.
+CI fails when it differs from the pinned engine.

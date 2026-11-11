@@ -58,7 +58,7 @@ jobs:
           echo 'skip-wheels=[{"wheel":{"name":"linux-aarch64"}},{"wheel":{"name":"linux-musl-x86_64"}},{"wheel":{"name":"linux-musl-aarch64"}},{"wheel":{"name":"macos-x86_64"}},{"wheel":{"name":"windows-x86_64"}}]' >> "$GITHUB_OUTPUT"
           changed="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
           printf '%s\n' "$changed"
-          if printf '%s\n' "$changed" | grep -qxE '\.github/workflows/release\.yml|scripts/release-corpus-gate\.py|scripts/pinned-spec-commit\.py|Cargo\.toml|Cargo\.lock|pyproject\.toml'; then
+          if printf '%s\n' "$changed" | grep -qxE '\.github/workflows/release\.yml|scripts/release-corpus-gate\.py|scripts/pinned-spec-commit\.py|scripts/check-engine-behind\.py|tests/engine_behind\.py|engine-behind\.txt|Cargo\.toml|Cargo\.lock|pyproject\.toml'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "Release path untouched: the build and gate jobs report success without running."
@@ -327,6 +327,10 @@ jobs:
       # The corpus is generated from resources/examples/*.md in the same
       # checkout, and tests/corpus_population.py reads those pages to derive how
       # many documents there should be. Both come from this one clone.
+      - name: The engine-declared corpus pairs match the pinned carve-rs
+        shell: bash
+        run: python scripts/check-engine-behind.py --engine carve-rs --manifest Cargo.toml --lock Cargo.lock
+
       - name: Check out the spec corpus that engine was written against
         uses: actions/checkout@v7
         with:
@@ -430,6 +434,10 @@ jobs:
           # The corpus is unchanged since the engine gitlink; this pins the spec release notes.
           spec="$(cat spec-corpus-revision.txt)"
           echo "spec=$spec" >> "$GITHUB_OUTPUT"
+
+      - name: The engine-declared corpus pairs match the pinned carve-rs
+        shell: bash
+        run: python scripts/check-engine-behind.py --engine carve-rs --manifest Cargo.toml --lock Cargo.lock
 
       - name: Check out the spec corpus that engine was written against
         uses: actions/checkout@v7

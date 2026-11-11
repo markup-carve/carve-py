@@ -248,6 +248,10 @@ jobs:
           spec="$(cat spec-corpus-revision.txt)"
           echo "spec=$spec" >> "$GITHUB_OUTPUT"
 
+      - name: The engine-declared corpus pairs match the pinned carve-rs
+        shell: bash
+        run: python3 scripts/check-engine-behind.py --engine carve-rs --manifest Cargo.toml --lock Cargo.lock
+
       - name: Check out the spec corpus that engine was written against
         uses: actions/checkout@v7
         with:
@@ -340,7 +344,7 @@ jobs:
           # being reported, so the exit status is discarded and the LOG is what
           # is read; a run that logged no count at all still fails below.
           set +e
-          .drift/bin/python scripts/release-corpus-gate.py \
+          CARVE_ENGINE_BEHIND=ignore .drift/bin/python scripts/release-corpus-gate.py \
             --wheel "$wheel" --corpus spec/tests/corpus > drift.log 2>&1
           set -e
           cat drift.log
