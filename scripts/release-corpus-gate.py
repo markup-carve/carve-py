@@ -190,7 +190,7 @@ def main():
     sys.path.insert(0, str(REPO_ROOT / "tests"))
     import engine_behind
 
-    declared = engine_behind.load()
+    declared = engine_behind.active()
     absent = sorted(set(declared) - {source.stem for source, _ in pairs})
     mismatches = [f"{slug} (declared in engine-behind.txt, not in this corpus)" for slug in absent]
     for source, expected in pairs:
@@ -203,7 +203,7 @@ def main():
             continue
         if source.stem in declared:
             # The pinned engine declares this pair; the wheel must render the engine's HTML.
-            if got.strip() != declared[source.stem] or got == want:
+            if got != declared[source.stem] or got == want:
                 mismatches.append(f"{source.stem} (declared in engine-behind.txt)")
         elif got != want:
             mismatches.append(source.stem)

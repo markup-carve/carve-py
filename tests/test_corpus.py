@@ -51,7 +51,7 @@ def test_corpus_is_actually_present():
 
 def test_corpus_renders_byte_identically():
     mismatches = []
-    declared = engine_behind.load()
+    declared = engine_behind.active()
     pairs = _pairs()
     absent = sorted(set(declared) - {crv.stem for crv, _ in pairs})
     assert not absent, f"engine-behind.txt declares pairs this corpus does not hold: {absent}"
@@ -60,7 +60,7 @@ def test_corpus_renders_byte_identically():
         got = carve.to_html(crv.read_text(encoding="utf-8")).rstrip("\n")
         if crv.stem in declared:
             # Both directions, as in carve-rs: the engine's HTML, and still not the golden.
-            if got.strip() != declared[crv.stem] or got == want:
+            if got != declared[crv.stem] or got == want:
                 mismatches.append(f"{crv.stem} (declared in engine-behind.txt)")
         elif got != want:
             mismatches.append(crv.stem)

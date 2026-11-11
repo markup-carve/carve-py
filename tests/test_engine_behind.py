@@ -37,3 +37,8 @@ def test_write_then_load_round_trips(tmp_path):
 def test_the_committed_ledger_loads():
     for slug, html in engine_behind.load().items():
         assert slug and html, slug
+
+
+def test_the_drift_measurement_can_turn_the_allowance_off(monkeypatch):
+    monkeypatch.setenv("CARVE_ENGINE_BEHIND", "ignore")
+    assert engine_behind.active() == {}

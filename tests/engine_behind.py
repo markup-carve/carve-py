@@ -7,6 +7,7 @@ declares. `engine-behind.txt` carries the copy, so the suite runs without a
 carve-rs checkout; `scripts/check-engine-behind.py` holds it to the engine.
 """
 
+import os
 import pathlib
 import re
 
@@ -34,6 +35,11 @@ def load(path=LEDGER):
     if slug is not None:
         declared[slug] = "\n".join(lines).strip()
     return declared
+
+
+def active():
+    """The allowance, unless CARVE_ENGINE_BEHIND=ignore (the spec-main drift measurement)."""
+    return {} if os.environ.get("CARVE_ENGINE_BEHIND") == "ignore" else load()
 
 
 def from_engine_source(corpus_rs):

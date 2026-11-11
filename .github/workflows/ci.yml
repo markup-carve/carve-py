@@ -344,7 +344,7 @@ jobs:
           # being reported, so the exit status is discarded and the LOG is what
           # is read; a run that logged no count at all still fails below.
           set +e
-          .drift/bin/python scripts/release-corpus-gate.py \
+          CARVE_ENGINE_BEHIND=ignore .drift/bin/python scripts/release-corpus-gate.py \
             --wheel "$wheel" --corpus spec/tests/corpus > drift.log 2>&1
           set -e
           cat drift.log
