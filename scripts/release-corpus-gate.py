@@ -187,7 +187,12 @@ def main():
             "subset it still contains; it must not certify a publish."
         )
 
-    mismatches = []
+    sys.path.insert(0, str(REPO_ROOT / "tests"))
+    import engine_behind
+
+    declared = engine_behind.load()
+    absent = sorted(set(declared) - {source.stem for source, _ in pairs})
+    mismatches = [f"{slug} (declared in engine-behind.txt, not in this corpus)" for slug in absent]
     for source, expected in pairs:
         want = expected.read_text(encoding="utf-8").rstrip("\n")
         try:
@@ -196,7 +201,11 @@ def main():
             # A panic is one more divergence; aborting would leave the rest unmeasured.
             mismatches.append(f"{source.stem} (engine panic: {str(panic).splitlines()[0]})")
             continue
-        if got != want:
+        if source.stem in declared:
+            # The pinned engine declares this pair; the wheel must render the engine's HTML.
+            if got.strip() != declared[source.stem] or got == want:
+                mismatches.append(f"{source.stem} (declared in engine-behind.txt)")
+        elif got != want:
             mismatches.append(source.stem)
 
     if mismatches:
@@ -209,7 +218,10 @@ def main():
             "cause; bump it, commit the regenerated Cargo.lock, and retag."
         )
 
-    print(f"corpus      : {len(pairs)}/{len(pairs)} documents byte-identical")
+    print(
+        f"corpus      : {len(pairs) - len(declared)}/{len(pairs)} documents byte-identical, "
+        f"{len(declared)} rendered as the pinned engine declares (engine-behind.txt)"
+    )
     print("release corpus gate: PASS")
 
 

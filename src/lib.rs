@@ -22,10 +22,7 @@ use carve_rs::extensions::{
     MathBlock, MathBlockOptions, Position, TableOfContents, TableOfContentsOptions, Tabs, TabsMode,
     TabsOptions, Wikilinks, WikilinksOptions,
 };
-use carve_rs::{
-    CarveExtension, IncludeRegionMode, Mode, Options, Profile, ProfileViolationError,
-    StaticRenderers,
-};
+use carve_rs::{CarveExtension, IncludeRegionMode, Mode, Options, Profile, StaticRenderers};
 use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
@@ -657,7 +654,7 @@ where
 
 /// [`with_options`] for the single-string entry points.
 #[allow(clippy::too_many_arguments)]
-fn render<F>(
+fn render<F, E>(
     source: &str,
     names: &[String],
     extension_options: Option<&Bound<'_, PyDict>>,
@@ -670,7 +667,8 @@ fn render<F>(
     f: F,
 ) -> PyResult<String>
 where
-    F: FnOnce(&str, &Options<'_>) -> Result<String, ProfileViolationError>,
+    F: FnOnce(&str, &Options<'_>) -> Result<String, E>,
+    E: std::fmt::Display,
 {
     with_options(
         names,
@@ -1640,16 +1638,20 @@ fn render_with_includes(
                 engine_options,
                 |options| {
                     let output = match which {
-                        IncludeTarget::Html => carve_rs::try_to_html_with_options(source, options),
+                        IncludeTarget::Html => carve_rs::try_to_html_with_options(source, options)
+                            .map_err(|e| e.to_string()),
                         IncludeTarget::Markdown => {
                             carve_rs::try_to_markdown_with_options(source, options)
+                                .map_err(|e| e.to_string())
                         }
                         IncludeTarget::Plain => {
                             carve_rs::try_to_plain_text_with_options(source, options)
+                                .map_err(|e| e.to_string())
                         }
-                        IncludeTarget::Ansi => carve_rs::try_to_ansi_with_options(source, options),
+                        IncludeTarget::Ansi => carve_rs::try_to_ansi_with_options(source, options)
+                            .map_err(|e| e.to_string()),
                     }
-                    .map_err(|e| PyValueError::new_err(e.to_string()))?;
+                    .map_err(PyValueError::new_err)?;
                     let out = PyDict::new(py);
                     out.set_item("output", output)?;
                     out.set_item("warnings", pyo3::types::PyList::empty(py))?;
@@ -1722,18 +1724,22 @@ fn render_with_includes(
                 let output = match which {
                     IncludeTarget::Html => {
                         carve_rs::render_html_with_options(&prepared.doc, options)
+                            .map_err(|e| e.to_string())
                     }
                     IncludeTarget::Markdown => {
                         carve_rs::render_markdown_with_options(&prepared.doc, options)
+                            .map_err(|e| e.to_string())
                     }
                     IncludeTarget::Plain => {
                         carve_rs::render_plain_text_with_options(&prepared.doc, options)
+                            .map_err(|e| e.to_string())
                     }
                     IncludeTarget::Ansi => {
                         carve_rs::render_ansi_with_options(&prepared.doc, options)
+                            .map_err(|e| e.to_string())
                     }
                 }
-                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+                .map_err(PyValueError::new_err)?;
 
                 let warnings = pyo3::types::PyList::empty(py);
                 for warning in &prepared.warnings {
