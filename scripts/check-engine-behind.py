@@ -36,7 +36,7 @@ def main():
     revision = pinned_revision(arguments.engine, arguments.manifest, arguments.lock)
     source = subprocess.run(
         ["git", "-C", arguments.engine, "show", f"{revision}:tests/corpus.rs"],
-        capture_output=True, text=True, check=True,
+        capture_output=True, text=True, encoding="utf-8", check=True,
     ).stdout
     engine = engine_behind.from_engine_source(source)
     if arguments.write:
