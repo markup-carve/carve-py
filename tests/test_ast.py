@@ -15,9 +15,11 @@ import carve
 def test_root_carries_exactly_the_three_fields():
     # PART 12 section 7. Frontmatter and footnote definitions are block nodes in
     # the tree, not root fields.
-    ast = carve.parse("---\ntitle: T\n---\n\nBody[^a].\n\n[^a]: note\n")
+    ast = carve.parse("---\ntitle: T\n---\n\nBody[^a].\n\n[^a]: note\n")["tree"]
 
-    assert sorted(ast) == ["children", "srcByteLength", "type"]
+    # C2-A-008 and C2-A-009 add the version and resolved stages to the root.
+    assert sorted(ast) == ["astVersion", "children", "srcByteLength", "stages", "type"]
+    assert ast["astVersion"] == "2.0"
     assert ast["type"] == "document"
     types = [child["type"] for child in ast["children"]]
     assert types == ["frontmatter", "paragraph", "footnote"]
@@ -26,11 +28,12 @@ def test_root_carries_exactly_the_three_fields():
 def test_frontmatter_is_raw_not_parsed():
     # A parsed mapping cannot be serialized back to the bytes the author wrote,
     # so the wire carries the block verbatim plus its format.
-    frontmatter = carve.parse("---toml\nx = 1\n---\n\nBody.\n")["children"][0]
+    frontmatter = carve.parse("---toml\nx = 1\n---\n\nBody.\n")["tree"]["children"][0]
 
     assert frontmatter["type"] == "frontmatter"
     assert frontmatter["format"] == "toml"
-    assert frontmatter["content"] == "x = 1"
+    # C2-A-049 names the raw field value and keeps its final line break.
+    assert frontmatter["value"] == "x = 1\n"
     # Section 4 requires a position on every node but the root, and the engine
     # places this one now. Asserting the whole dict pinned its ABSENCE, so the
     # test failed on the engine getting better rather than worse.
@@ -42,12 +45,13 @@ def test_nodes_carry_codepoint_positions():
     # exclusive, counted in CODEPOINTS. The astral character is the point - bytes
     # and UTF-16 units agree with codepoints below U+10000, so a wrong unit is
     # unobservable without one.
-    ast = carve.parse("\U0001F600 *b*\n")
+    ast = carve.parse("\U0001F600 *b*\n")["tree"]
     strong = ast["children"][0]["children"][-1]
 
     assert strong["type"] == "strong"
     assert strong["pos"]["startColumn"] == 3
-    assert strong["pos"]["startOffset"] == 2
+    # C2-A-141 uses UTF-8 byte offsets, while columns count code points.
+    assert strong["pos"]["startOffset"] == 5
 
 
 def test_a_span_the_engine_cannot_place_is_absent_not_invented():
@@ -65,23 +69,21 @@ def test_a_span_the_engine_cannot_place_is_absent_not_invented():
     # source at any offset, so no honest span exists." The omission applies to
     # the cell itself, not only to the text it carries.
     source = "|= a |= b |\n| x | A long description |\n+     | that continues     |\n"
-    cell = carve.parse(source)["children"][0]["rows"][1]["cells"][1]
+    # C2-A-086 groups rows under table_body; C2-A-091 adds cell_paragraph.
+    table = carve.parse(source)["tree"]["children"][0]
+    cell = table["children"][1]["children"][0]["children"][1]
 
     assert "pos" not in cell, "a cell reassembled across lines must not claim a span"
-    # AST contract 1.1 keeps the join as a `cell_wrap` marker, so each half is
-    # its own text node and its span is a real slice of the source.
-    first, wrap, second = cell["children"]
-    assert wrap == {"type": "cell_wrap", "line": 1, "pos": wrap["pos"]}
-    for text in (first, second):
-        start, end = text["pos"]["startOffset"], text["pos"]["endOffset"]
-        assert source[start:end] == text["value"]
-    assert [first["value"], second["value"]] == ["A long description", "that continues"]
+    # C2-A-158 merges pieces into text and omits its invented position.
+    text = cell["children"][0]["children"][0]
+    assert text == {"type": "text", "value": "A long description that continues"}
 
 
 def test_parse_json_returns_the_same_tree_as_parse():
     source = "# H\n\n- a\n- b\n"
 
-    assert json.loads(carve.parse_json(source)) == carve.parse(source)
+    # C2-A-165: encodeTree keeps every field of the parsed 2.0 tree.
+    assert json.loads(carve.parse_json(source)) == carve.parse(source)["tree"]
 
 
 def test_parse_carries_positions_unless_asked_otherwise():
@@ -93,6 +95,6 @@ def test_parse_carries_positions_unless_asked_otherwise():
     """
     source = "# Title\n"
 
-    assert "pos" in carve.parse(source)["children"][0]
+    assert "pos" in carve.parse(source)["tree"]["children"][0]
     assert "pos" in json.loads(carve.parse_json(source))["children"][0]
-    assert "pos" not in carve.parse(source, positions=False)["children"][0]
+    assert "pos" not in carve.parse(source, positions=False)["tree"]["children"][0]

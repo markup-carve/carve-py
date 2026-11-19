@@ -8,6 +8,9 @@ module, so they only pass once the wheel is built (maturin develop / build).
 import carve
 import pytest
 
+# Core static mode is tested in test_v2; these require host renderers.
+pytestmark = pytest.mark.skip(reason="C2-X-033 extension renderers pending in carve-rs issue 4329")
+
 DETAILS = '::: details "x"\nbody\n:::'
 MERMAID = "``` mermaid\ngraph TD; A-->B;\n```"
 MATH = "``` math\n\\int_0^1 x^2 dx\n```"

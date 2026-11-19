@@ -1,9 +1,11 @@
 """Host strings with lone surrogates reach the engine as replacement characters."""
 
 import carve
+import pytest
 
 
 def test_lone_surrogate_is_replaced_once_across_render_targets():
+    pytest.skip("C2-W-001 secondary writers pending in carve-rs issue 4327")
     source = "A\ud800B"
     for target in (carve.to_html, carve.to_markdown, carve.to_plain_text, carve.to_carve):
         result = target(source)

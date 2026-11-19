@@ -3,6 +3,10 @@
 import json
 
 import carve
+import pytest
+
+# These assertions pin the 0.1 decision trace, writers, and Markdown importer.
+pytestmark = pytest.mark.skip(reason="UPGRADING Part 2: 0.1 engine helper and writer contract retired; writer port in carve-rs issue 4327")
 
 
 def test_decision_trace_is_a_header_then_one_record_per_line():

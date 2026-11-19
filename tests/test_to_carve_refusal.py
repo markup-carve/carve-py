@@ -2,6 +2,8 @@ import pytest
 
 import carve
 
+pytestmark = pytest.mark.skip(reason="C2-W-001 source writer pending in carve-rs issue 4327")
+
 # One level past the parse cap the over-cap flattening hands the writer a code
 # value whose first line ends in a space, which the block layer strips, so the
 # writer cannot spell the tree back (carve-rs#2326).

@@ -11,6 +11,9 @@ most of them.
 import carve
 import pytest
 
+# C2-T-020 changes the 0.1 warning record to diagnostics with byte ranges.
+pytestmark = pytest.mark.skip(reason="C2-T-020 0.1 warning record retired; 0.2 lint tests in test_v2")
+
 
 ORPHAN = "{#orphan .cls}\n\n"
 

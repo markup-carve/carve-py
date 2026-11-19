@@ -8,6 +8,9 @@ fails here rather than in the field.
 import carve
 import pytest
 
+# UPGRADING Part 2 retires 0.1 version stamps from the 0.2 core.
+pytestmark = pytest.mark.skip(reason="UPGRADING Part 2: 0.1 stamp helpers retired")
+
 FROM_PHP = "# Hi\n\n%% carve-version: 0.1; generated-by: carve-php 0.1.0\n"
 FROM_JS = "# Hi\n\n%% carve-version: 0.1; generated-by: carve-js 0.1.0\n"
 BLOCK_FROM_RS = "# Hi\n\n%%%\ncarve-version: 0.1\ngenerated-by: carve-rs 0.1.1\n%%%\n"
