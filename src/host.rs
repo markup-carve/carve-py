@@ -88,12 +88,45 @@ pub(super) fn render_host(
     if let Some(options) = options {
         if let Some(standard) = options.get_item("extensions")? {
             for name in standard.extract::<Vec<String>>()? {
-                let selected = renderers
-                    .and_then(|items| items.get_item(&name).ok().flatten())
-                    .and_then(|value| value.extract::<String>().ok())
-                    .is_some_and(|value| value == "standard");
+                let keyword = renderers.and_then(|items| items.get_item(&name).ok().flatten());
+                let option = options.get_item("renderers")?.and_then(|value| {
+                    value
+                        .cast::<PyDict>()
+                        .ok()
+                        .and_then(|map| map.get_item(&name).ok().flatten())
+                });
+                let selection = keyword.or(option);
+                let mut aria = false;
+                let selected = if let Some(selection) = selection {
+                    if selection.extract::<String>().ok().as_deref() == Some("standard") {
+                        true
+                    } else if let Ok(map) = selection.cast::<PyDict>() {
+                        if let Some(standard) = map.get_item("standard")? {
+                            if name == "carve.tabs" {
+                                aria = standard
+                                    .cast::<PyDict>()
+                                    .ok()
+                                    .and_then(|config| config.get_item("mode").ok().flatten())
+                                    .and_then(|mode| mode.extract::<String>().ok())
+                                    .as_deref()
+                                    == Some("aria");
+                            }
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
                 host.enable_standard(&name, selected)
                     .map_err(|e| super::CarveError::new_err(e.to_string()))?;
+                if aria {
+                    host.enable_standard_tabs_renderer("aria")
+                        .map_err(|e| super::CarveError::new_err(e.to_string()))?;
+                }
             }
         }
     }
@@ -129,6 +162,9 @@ pub(super) fn render_host(
                 ));
                 channels.push((Channel::BuildTime, Box::new(PythonRenderer(callback))));
             } else if let Ok(map) = config.cast::<PyDict>() {
+                if map.get_item("standard")?.is_some() {
+                    continue;
+                }
                 for (channel, callback) in map.iter() {
                     if channel.extract::<String>()? == "version" {
                         continue;

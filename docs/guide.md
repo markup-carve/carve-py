@@ -95,13 +95,10 @@ This host path reads the 0.2 render options, including `mode`, `profile`, `symbo
 
 ## Pending engine features
 
-`carve.to_markdown`, `carve.to_plain_text`, and `carve.to_ansi` route through
-the writer registry. They raise `CarveError` with "writer not available yet"
-until the pinned engine registers the `markdown`, `plain`, and `ansi` targets
-(carve-rs issues 4327 and 4349). The 0.1 math block, list table, diagram,
-glossary, and other bundled extensions are not ported to the Rust 0.2 host
-yet (carve-rs issues 4341, 4342, and 4343). Markdown import is carve-rs issue
-4344.
+`carve.to_markdown`, `carve.to_plain_text`, and `carve.to_ansi` use the
+pinned engine's export writers. The 0.1 math block, list table, diagram,
+glossary, and other bundled extensions have separate 0.2 host definitions.
+Host transforms and renderers can claim and render their source constructs.
 
 The 0.1 Markdown importer, stamps, decision trace, source patch tools, and
 region-selection helper have no 0.2 core call. Use the 0.1 branch for those

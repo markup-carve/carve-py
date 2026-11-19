@@ -105,3 +105,13 @@ def test_declared_version_and_existing_render_options():
     assert result["html"] == "<aside>version 2</aside>"
     assert carve.to_html("Ship :rocket:", {"symbols": {"rocket": "🚀"}},
                          transforms=[lambda value: value]) == "<p>Ship 🚀</p>"
+
+
+def test_standard_selection_in_options_and_aria_configuration():
+    source = "::: tabs\n::: tab {title=A}\nx\n:::\n:::\n"
+    options = {"extensions": ["carve.tabs"],
+               "renderers": {"carve.tabs": {"standard": {"mode": "aria"}}}}
+    expected = carve.render(source, options)["html"]
+    assert carve.to_html(source, options, transforms=[lambda tree: tree]) == expected
+    assert carve.to_html(source, extensions=["carve.tabs"],
+                         renderers={"carve.tabs": {"standard": {"mode": "aria"}}}) == expected

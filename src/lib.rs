@@ -341,7 +341,11 @@ fn to_html(
             for (name, renderer) in items.iter() {
                 let name: String = name.extract()?;
                 if STANDARD_EXTENSIONS.contains(&name.as_str())
-                    && !renderer.is_instance_of::<PyString>()
+                    && (renderer.is_callable()
+                        || renderer
+                            .cast::<PyDict>()
+                            .ok()
+                            .is_some_and(|map| map.get_item("standard").ok().flatten().is_none()))
                 {
                     return Err(option_error(py, format!("renderers: {name}: standard extension callbacks are not selected by the JSON options (C2-T-010)")));
                 }
@@ -371,7 +375,12 @@ fn to_html(
         }
         if let Some(renderers) = renderers.filter(|items| !items.is_empty()) {
             for (name, renderer) in renderers.iter() {
-                if !renderer.is_instance_of::<PyString>() {
+                if !renderer.is_instance_of::<PyString>()
+                    && !renderer
+                        .cast::<PyDict>()
+                        .ok()
+                        .is_some_and(|map| map.get_item("standard").ok().flatten().is_some())
+                {
                     return Err(option_error(
                         py,
                         format!(
@@ -432,12 +441,6 @@ fn to_carve(
 }
 
 fn write_source(py: Python<'_>, source: Source, target: &str) -> PyResult<String> {
-    if matches!(target, "markdown" | "plain" | "ansi") {
-        return Err(option_error(
-            py,
-            format!("{target} writer not available yet through this binding"),
-        ));
-    }
     let parsed = execute(py, &request(py, "parse", Some(&source.0), None)?)?;
     let tree = parsed
         .bind(py)

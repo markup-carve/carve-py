@@ -24,7 +24,7 @@ diagnostics = carve.lint("# Hello")["diagnostics"]
 
 Options use the Carve 0.2 names in a dictionary. Raw HTML is disabled by
 default. See the [guide](docs/guide.md) for safe rendering, include roots,
-diagnostics, formatting, HTML import, standard extensions, and pending writers.
+diagnostics, formatting, HTML import, standard extensions, and available export writers.
 
 ## Native extension callbacks
 
