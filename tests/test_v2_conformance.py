@@ -47,10 +47,6 @@ def test_source_only_lint_clause_cases():
     ]
     assert len(selected) >= 371
     for row in selected:
-        if row["id"] == "CC-800":
-            # C2-B-044 changed on 18 November; the Rust readiness baseline
-            # records this gap in carve issue 6078.
-            continue
         actual = [entry["code"] for entry in carve.lint(row["input"])["diagnostics"]]
         expected = [
             entry if isinstance(entry, str) else entry["code"]
@@ -59,7 +55,6 @@ def test_source_only_lint_clause_cases():
         assert all(code in actual for code in expected), row["id"]
 
 
-@pytest.mark.xfail(reason="C2-B-044 engine gap recorded in carve issue 6078", strict=True)
 def test_cc800_ordered_list_kind_split():
     source = "v. a\nvi. b\n"
     assert "ordered-list-kind-split" in [entry["code"] for entry in carve.lint(source)["diagnostics"]]

@@ -70,13 +70,21 @@ def test_raw_html_and_url_security_defaults():
     assert 'href=""' in carve.render("[go](javascript:alert(1))")["html"]
 
 
-def test_compatibility_spellings_reject_unavailable_extensions():
+def test_standard_extension_selection():
     assert carve.to_html_with_extensions("Hi", []) == carve.to_html("Hi")
-    assert carve.extensions() == []
-    with pytest.raises(carve.CarveError, match="not available yet"):
+    assert "carve.tabs" in carve.extensions()
+    source = "::: tabs\n::: tab {title=A}\nx\n:::\n:::\n"
+    html = carve.to_html(source, extensions=["carve.tabs"], renderers={"carve.tabs": "standard"})
+    assert html == carve.render(source, {"extensions": ["carve.tabs"], "renderers": {"carve.tabs": "standard"}})["html"]
+    assert carve.to_html_with_extensions(":wiki[Page]", ["carve.wiki"]) == "<p>Page</p>"
+
+
+def test_extension_selection_refusals():
+    with pytest.raises(carve.CarveError) as unknown:
         carve.to_html("Hi", extensions=["math-block"])
-    with pytest.raises(carve.CarveError, match="not available yet"):
-        carve.to_html("Hi", renderers={"math": lambda source: source})
+    assert unknown.value.name == "CarveOptionError"
+    with pytest.raises(carve.CarveError, match="C2-T-010"):
+        carve.to_html("Hi", renderers={"carve.tabs": lambda node: ""})
 
 
 def test_removed_markdown_import_is_explicit():
@@ -94,11 +102,13 @@ def test_unregistered_writers_report_the_target(target, function):
         function("# Hi")
 
 
-def test_unregistered_source_writer_and_html_import_report_gap():
-    with pytest.raises(carve.CarveError, match="format is not available"):
-        carve.fmt("# Hi")
-    with pytest.raises(carve.CarveError, match="importDocument is not available"):
-        carve.import_document("<p>Hi</p>")
+def test_source_writer_and_html_import():
+    assert carve.fmt("# H")["source"] == "= H\n"
+    assert carve.to_carve("# H") == "= H\n"
+    imported = carve.import_document("<p>Hi</p>")
+    assert imported["source"] == "Hi\n"
+    assert imported["tree"]["type"] == "document"
+    assert carve.from_html("<p>Hi</p>")["source"] == "Hi\n"
 
 
 def test_include_root(tmp_path):
@@ -120,31 +130,23 @@ def test_include_dependency_and_root_refusals(tmp_path):
     assert "include-not-found" in [row["code"] for row in missing["diagnostics"]]
 
 
-@pytest.mark.skip(reason="Carve 0.2 source writer pending in carve-rs issue 4327")
-def test_pending_source_writer():
-    assert carve.fmt("# H")["source"]
-
-
-@pytest.mark.skip(reason="Carve 0.2 Markdown writer pending in carve-rs issue 4327")
+@pytest.mark.skip(reason="Carve 0.2 Markdown writer pending in carve-rs issues 4327 and 4349")
 def test_pending_markdown_writer():
     assert carve.to_markdown("# H")
 
 
-@pytest.mark.skip(reason="Carve 0.2 plain writer pending in carve-rs issue 4327")
+@pytest.mark.skip(reason="Carve 0.2 plain writer pending in carve-rs issues 4327 and 4349")
 def test_pending_plain_writer():
     assert carve.to_plain_text("# H")
 
 
-@pytest.mark.skip(reason="Carve 0.2 ANSI writer pending in carve-rs issue 4327")
+@pytest.mark.skip(reason="Carve 0.2 ANSI writer pending in carve-rs issues 4327 and 4349")
 def test_pending_ansi_writer():
     assert carve.to_ansi("# H")
 
 
-@pytest.mark.skip(reason="Carve 0.2 HTML importer pending in carve-rs issue 4328")
-def test_pending_html_import():
-    assert carve.import_document("<p>Hi</p>")["source"]
-
-
-@pytest.mark.skip(reason="Carve 0.2 extension registration pending in carve-rs issue 4329")
-def test_pending_extension_registration():
-    assert carve.render("```math\nx\n```", {"extensions": ["math-block"]})
+@pytest.mark.xfail(strict=True, reason="carve-rs issue 4351: include-unresolved names an empty path")
+def test_unresolved_include_loss_names_its_file(tmp_path):
+    result = carve.render("{{ missing.crv }}", {"includes": {"root": str(tmp_path)}}, diagnostics=True)
+    [loss] = [row for row in result["diagnostics"] if row["code"] == "include-unresolved"]
+    assert loss["message"] == 'Include "missing.crv" could not be resolved.'
