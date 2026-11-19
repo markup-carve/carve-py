@@ -27,7 +27,8 @@ crate-type = ["cdylib"]
 pyo3 = { version = "0.27", features = ["abi3-py38", "extension-module"] }
 
 # --- Carve engine dependency ---------------------------------------------
-# The unreleased 0.2 crate lives in the Rust engine repository's v2 workspace
-# member. Cargo fetches that member from the exact next2 commit recorded here.
+# The unreleased 0.2 engine is the `carve-lang` crate (library `carve`) on the
+# Rust engine repository's next2 branch, fetched from the exact commit here.
+# src/lib.rs names it `::carve` because this extension module is also `carve`.
 # This does not publish an engine or a Python package.
-carve2 = { git = "https://github.com/markup-carve/carve-rs", rev = "dd5f0e7ac90856c220c6a6afdc6b56dba8817844", package = "carve2" }
+carve = { git = "https://github.com/markup-carve/carve-rs", rev = "7fb7c24956298e78bc4716ff7e0e1fb96e60ecdf", package = "carve-lang" }

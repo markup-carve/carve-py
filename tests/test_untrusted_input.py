@@ -28,8 +28,8 @@ def test_raw_html_requires_explicit_opt_in_u076():
 
 
 def test_safe_composes_with_extensions():
-    # C2-X-033: extension registration is pending in carve-rs issue 4329.
-    pytest.skip("C2-X-033 extension host pending in carve-rs issue 4329")
+    # The details extension is pending in carve-rs issue 4342.
+    pytest.skip("details extension pending in carve-rs issue 4342")
     out = carve.to_html(RAW_HTML, extensions=["details"], safe=True)
     assert "&lt;script&gt;" in out
     assert "<script>" not in out
@@ -75,7 +75,7 @@ def test_input_under_the_cap_still_renders():
 
 
 def test_profile_applies_to_the_other_targets_too():
-    pytest.skip("C2-W-001 Markdown and plain writers pending in carve-rs issue 4327")
+    pytest.skip("C2-W-001 Markdown and plain writers pending in carve-rs issues 4327 and 4349")
     """A profile reaches markdown / plain / ansi, not only HTML.
 
     The minimal profile degrades an image to its visible fallback. This makes
@@ -95,7 +95,7 @@ def test_profile_applies_to_the_other_targets_too():
 
 @pytest.mark.parametrize("func", ["to_markdown", "to_plain_text", "to_ansi"])
 def test_profile_is_not_swallowed_by_the_no_extension_fast_path(func):
-    pytest.skip("C2-W-001 secondary writers pending in carve-rs issue 4327")
+    pytest.skip("C2-W-001 secondary writers pending in carve-rs issues 4327 and 4349")
     """These three take a fast path when no extensions are requested.
 
     That path returned before `profile` was read, so the keyword was accepted
@@ -110,7 +110,7 @@ def test_profile_is_not_swallowed_by_the_no_extension_fast_path(func):
 
 
 def test_non_html_targets_never_emit_live_raw_html():
-    pytest.skip("C2-W-001 Markdown and plain writers pending in carve-rs issue 4327")
+    pytest.skip("C2-W-001 Markdown and plain writers pending in carve-rs issues 4327 and 4349")
     """Why there is no `safe` keyword on those targets: nothing to switch off."""
     assert "<script>" not in carve.to_markdown(RAW_HTML)
     assert "<script>" not in carve.to_plain_text(RAW_HTML)

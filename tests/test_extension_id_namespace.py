@@ -25,9 +25,8 @@ Scenarios mirror carve-js test/extension-id-namespace.test.ts for parity.
 import carve
 import pytest
 
-# C2-X-033: the 0.2 extension host is pending in carve-rs issue 4329.
-# These 0.1 citation registration assertions resume when that host exists.
-pytest.skip("C2-X-033 extension host pending in carve-rs issue 4329", allow_module_level=True)
+# These 0.1 citation registration assertions resume with the citations extension.
+pytest.skip("citations extension pending in carve-rs issue 4343", allow_module_level=True)
 
 # A minimal cited document: one citation, an in-document definition, and the
 # auto-appended references list carrying `<li id="ref-foo">`.

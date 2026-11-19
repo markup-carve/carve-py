@@ -1,7 +1,7 @@
 # Carve 0.2 Python guide
 
-This branch uses the unreleased `carve2` engine at the git revision in
-`Cargo.lock`. Its Python functions return dictionaries with the same camelCase
+This branch uses the unreleased Carve 0.2 engine (the `carve-lang` crate from
+carve-rs `next2`, imported as `carve`) at the git revision in `Cargo.lock`. Its Python functions return dictionaries with the same camelCase
 keys as the public Rust JSON boundary. The [type stub](../carve.pyi) documents
 the records.
 
@@ -62,16 +62,42 @@ Lint diagnostics carry `code`, `severity`, `channel`, `message`, and optional
 `range.endOffset` count UTF-8 bytes, as in the 0.2 tooling contract. Convert
 them before using them as Python string indices.
 
+## Formatting and HTML import
+
+`carve.fmt` and `carve.to_carve` run the canonical Carve writer.
+`carve.import_document` and `carve.from_html` import HTML and return `tree`,
+`source`, and `diagnostics`.
+
+```python
+carve.to_carve("# Hi")  # "= Hi\n"
+carve.from_html("<p>Hello <strong>world</strong></p>")["source"]  # "Hello *world*\n"
+```
+
+## Standard extensions
+
+The engine's standard extensions are provisional. `carve.extensions()` lists
+them (`carve.cite`, `carve.imgFence.image`, `carve.imgFence.img`, `carve.tabs`,
+`carve.wiki`). Select them with `extensions`, and their standard renderers
+with `renderers`:
+
+```python
+carve.to_html(source, extensions=["carve.tabs"], renderers={"carve.tabs": "standard"})
+carve.render(source, {"extensions": ["carve.wiki"]})
+```
+
+`renderers` takes only `"standard"`. Python callables have no form on the JSON
+boundary (C2-T-010) and raise `CarveError`; binding them natively is carve-py
+issue 130.
+
 ## Pending engine features
 
-`carve.fmt`, `carve.to_carve`, `carve.import_document`, and `carve.from_html`
-remain callable. They raise `CarveError` with an availability message until
-the source writer or HTML importer is registered in the pinned engine.
-`carve.to_markdown`, `carve.to_plain_text`, and `carve.to_ansi` likewise route
-through the writer registry. Their targets are pending. The extension host is
-provisional, so 0.1 extension registrations and Python callback renderers are
-not active on this branch. The engine work is tracked in carve-rs issues
-4327, 4328, and 4329.
+`carve.to_markdown`, `carve.to_plain_text`, and `carve.to_ansi` route through
+the writer registry. They raise `CarveError` with "writer not available yet"
+until the pinned engine registers the `markdown`, `plain`, and `ansi` targets
+(carve-rs issues 4327 and 4349). The 0.1 math block, list table, diagram,
+glossary, and other bundled extensions are not ported to the Rust 0.2 host
+yet (carve-rs issues 4341, 4342, and 4343). Markdown import is carve-rs issue
+4344.
 
 The 0.1 Markdown importer, stamps, decision trace, source patch tools, and
 region-selection helper have no 0.2 core call. Use the 0.1 branch for those

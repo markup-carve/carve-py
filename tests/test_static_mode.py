@@ -8,8 +8,8 @@ module, so they only pass once the wheel is built (maturin develop / build).
 import carve
 import pytest
 
-# Core static mode is tested in test_v2; these require host renderers.
-pytestmark = pytest.mark.skip(reason="C2-X-033 extension renderers pending in carve-rs issue 4329")
+# Core static mode is tested in test_v2; these need the details extension and Python renderers.
+pytestmark = pytest.mark.skip(reason="details extension pending in carve-rs issue 4342; Python renderers in carve-py issue 130")
 
 DETAILS = '::: details "x"\nbody\n:::'
 MERMAID = "``` mermaid\ngraph TD; A-->B;\n```"

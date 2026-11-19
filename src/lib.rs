@@ -106,7 +106,7 @@ fn request<'py>(
 fn execute(py: Python<'_>, req: &Bound<'_, PyDict>) -> PyResult<Py<PyAny>> {
     let json = py.import("json")?;
     let encoded: String = json.call_method1("dumps", (req,))?.extract()?;
-    let response = carve2::api::json::call(&encoded);
+    let response = ::carve::api::json::call(&encoded);
     let decoded = json.call_method1("loads", (response,))?;
     let decoded = decoded.cast::<PyDict>()?;
     if let Some(error) = decoded.get_item("error")? {
@@ -285,6 +285,15 @@ fn write(
     })
 }
 
+/// The standard extensions the engine enables over the JSON boundary (C2-X-039).
+const STANDARD_EXTENSIONS: &[&str] = &[
+    "carve.cite",
+    "carve.imgFence.image",
+    "carve.imgFence.img",
+    "carve.tabs",
+    "carve.wiki",
+];
+
 #[pyfunction]
 #[pyo3(signature = (source, options = None, *, extensions = None, renderers = None))]
 fn to_html(
@@ -295,14 +304,27 @@ fn to_html(
     renderers: Option<Bound<'_, PyDict>>,
 ) -> PyResult<String> {
     guard(|| {
-        if extensions.as_ref().is_some_and(|names| !names.is_empty())
-            || renderers.as_ref().is_some_and(|items| !items.is_empty())
-        {
-            return Err(option_error(py,
-                "extension registration and host renderers are not available yet (carve-rs issue 4329)",
-            ));
+        let merged = PyDict::new(py);
+        if let Some(options) = options {
+            merged.update(options.as_mapping())?;
         }
-        let result = execute(py, &request(py, "render", Some(&source.0), options)?)?;
+        if let Some(names) = extensions.filter(|names| !names.is_empty()) {
+            merged.set_item("extensions", names)?;
+        }
+        if let Some(renderers) = renderers.filter(|items| !items.is_empty()) {
+            for (name, renderer) in renderers.iter() {
+                if !renderer.is_instance_of::<PyString>() {
+                    return Err(option_error(
+                        py,
+                        format!(
+                            "renderers: {name}: host callback renderers have no JSON form (C2-T-010); use \"standard\""
+                        ),
+                    ));
+                }
+            }
+            merged.set_item("renderers", renderers)?;
+        }
+        let result = execute(py, &request(py, "render", Some(&source.0), Some(merged))?)?;
         result
             .bind(py)
             .cast::<PyDict>()?
@@ -326,8 +348,10 @@ fn to_html_with_extensions(
 #[pyfunction]
 fn extensions() -> PyResult<Vec<String>> {
     guard(|| {
-        // No extension is registered until the provisional host API is implemented.
-        Ok(Vec::new())
+        Ok(STANDARD_EXTENSIONS
+            .iter()
+            .map(|name| name.to_string())
+            .collect())
     })
 }
 

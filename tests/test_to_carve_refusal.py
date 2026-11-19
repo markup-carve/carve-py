@@ -2,7 +2,7 @@ import pytest
 
 import carve
 
-pytestmark = pytest.mark.skip(reason="C2-W-001 source writer pending in carve-rs issue 4327")
+pytestmark = pytest.mark.skip(reason="0.1 helper or option retired (UPGRADING Part 2); the 0.2 source writer is tested in test_v2")
 
 # One level past the parse cap the over-cap flattening hands the writer a code
 # value whose first line ends in a space, which the block layer strips, so the

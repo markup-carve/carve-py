@@ -2,8 +2,8 @@ import json
 import pytest
 import carve
 
-# C2-W-001: the 0.2 Carve source writer is pending in carve-rs issue 4327.
-pytestmark = pytest.mark.skip(reason="C2-W-001 source writer pending in carve-rs issue 4327")
+# These use the retired 0.1 render_ast_json helper; 0.2 tree calls are tested in test_v2.
+pytestmark = pytest.mark.skip(reason="0.1 helper or option retired (UPGRADING Part 2); the 0.2 source writer is tested in test_v2")
 
 
 def test_ast_writer_escapes_literal_markup_and_preserves_text():
