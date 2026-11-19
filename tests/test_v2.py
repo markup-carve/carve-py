@@ -92,14 +92,13 @@ def test_removed_markdown_import_is_explicit():
         carve.from_markdown("# Hi")
 
 
-@pytest.mark.parametrize("target,function", [
-    ("markdown", carve.to_markdown),
-    ("plain", carve.to_plain_text),
-    ("ansi", carve.to_ansi),
+@pytest.mark.parametrize("function,expected", [
+    (carve.to_markdown, "# Hi\n"),
+    (carve.to_plain_text, "Hi\n"),
+    (carve.to_ansi, "\x1b[1m\x1b[95mHi\x1b[0m\n\x1b[95m══\x1b[0m\n"),
 ])
-def test_unregistered_writers_report_the_target(target, function):
-    with pytest.raises(carve.CarveError, match=target + " writer not available yet"):
-        function("# Hi")
+def test_registered_writers_return_output(function, expected):
+    assert function("# Hi") == expected
 
 
 def test_source_writer_and_html_import():
@@ -145,7 +144,6 @@ def test_pending_ansi_writer():
     assert carve.to_ansi("# H")
 
 
-@pytest.mark.xfail(strict=True, reason="carve-rs issue 4351: include-unresolved names an empty path")
 def test_unresolved_include_loss_names_its_file(tmp_path):
     result = carve.render("{{ missing.crv }}", {"includes": {"root": str(tmp_path)}}, diagnostics=True)
     [loss] = [row for row in result["diagnostics"] if row["code"] == "include-unresolved"]
