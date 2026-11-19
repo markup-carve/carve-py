@@ -85,9 +85,13 @@ carve.to_html(source, extensions=["carve.tabs"], renderers={"carve.tabs": "stand
 carve.render(source, {"extensions": ["carve.wiki"]})
 ```
 
-`renderers` takes only `"standard"`. Python callables have no form on the JSON
-boundary (C2-T-010) and raise `CarveError`; binding them natively is carve-py
-issue 130.
+`renderers` also accepts Python callables through the native host. A callable
+handles both channels; a dictionary with `interactive` and `static` keys selects
+channels separately. Use `carve.render_with_host(source, tree=tree, renderers=...,
+transforms=...)` for a supplied extension tree. A transform receives a copy of
+the resolved JSON-shaped document and returns a document. The engine reports a
+failed callback as `extension-renderer-failed` or `extension-transform-failed`.
+This host path reads `mode`, `sections`, `rawHtml`, and `extensions` options.
 
 ## Pending engine features
 

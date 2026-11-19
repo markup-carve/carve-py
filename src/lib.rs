@@ -1,8 +1,10 @@
 //! Python transport for the public Carve 0.2 JSON call boundary.
 
+mod host;
+
 use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyDict, PyString};
+use pyo3::types::{PyAny, PyDict, PyList, PyString};
 use std::cell::RefCell;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::Once;
@@ -295,13 +297,36 @@ const STANDARD_EXTENSIONS: &[&str] = &[
 ];
 
 #[pyfunction]
-#[pyo3(signature = (source, options = None, *, extensions = None, renderers = None))]
+#[pyo3(signature = (source, options = None, *, tree = None, renderers = None, transforms = None))]
+fn render_with_host(
+    py: Python<'_>,
+    source: Source,
+    options: Option<Bound<'_, PyDict>>,
+    tree: Option<Bound<'_, PyAny>>,
+    renderers: Option<Bound<'_, PyDict>>,
+    transforms: Option<Bound<'_, PyList>>,
+) -> PyResult<Py<PyAny>> {
+    guard(|| {
+        host::render_host(
+            py,
+            &source.0,
+            tree.as_ref(),
+            options.as_ref(),
+            renderers.as_ref(),
+            transforms.as_ref(),
+        )
+    })
+}
+
+#[pyfunction]
+#[pyo3(signature = (source, options = None, *, extensions = None, renderers = None, transforms = None))]
 fn to_html(
     py: Python<'_>,
     source: Source,
     options: Option<Bound<'_, PyDict>>,
     extensions: Option<Vec<String>>,
     renderers: Option<Bound<'_, PyDict>>,
+    transforms: Option<Bound<'_, PyList>>,
 ) -> PyResult<String> {
     guard(|| {
         let merged = PyDict::new(py);
@@ -310,6 +335,38 @@ fn to_html(
         }
         if let Some(names) = extensions.filter(|names| !names.is_empty()) {
             merged.set_item("extensions", names)?;
+        }
+        if let Some(items) = renderers.as_ref() {
+            for (name, renderer) in items.iter() {
+                let name: String = name.extract()?;
+                if STANDARD_EXTENSIONS.contains(&name.as_str())
+                    && !renderer.is_instance_of::<PyString>()
+                {
+                    return Err(option_error(py, format!("renderers: {name}: standard extension callbacks are not selected by the JSON options (C2-T-010)")));
+                }
+            }
+        }
+        if transforms.as_ref().is_some_and(|items| !items.is_empty())
+            || renderers.as_ref().is_some_and(|items| {
+                items.iter().any(|(_, renderer)| {
+                    renderer.is_callable() || renderer.is_instance_of::<PyDict>()
+                })
+            })
+        {
+            let rendered = host::render_host(
+                py,
+                &source.0,
+                None,
+                Some(&merged),
+                renderers.as_ref(),
+                transforms.as_ref(),
+            )?;
+            return rendered
+                .bind(py)
+                .cast::<PyDict>()?
+                .get_item("html")?
+                .ok_or_else(|| CarveError::new_err("render result has no html"))?
+                .extract();
         }
         if let Some(renderers) = renderers.filter(|items| !items.is_empty()) {
             for (name, renderer) in renderers.iter() {
@@ -342,7 +399,7 @@ fn to_html_with_extensions(
     extensions: Vec<String>,
     options: Option<Bound<'_, PyDict>>,
 ) -> PyResult<String> {
-    guard(|| to_html(py, source, options, Some(extensions), None))
+    guard(|| to_html(py, source, options, Some(extensions), None, None))
 }
 
 #[pyfunction]
@@ -374,6 +431,12 @@ fn to_carve(
 }
 
 fn write_source(py: Python<'_>, source: Source, target: &str) -> PyResult<String> {
+    if matches!(target, "markdown" | "plain" | "ansi") {
+        return Err(option_error(
+            py,
+            format!("{target} writer not available yet through this binding"),
+        ));
+    }
     let parsed = execute(py, &request(py, "parse", Some(&source.0), None)?)?;
     let tree = parsed
         .bind(py)
@@ -443,6 +506,7 @@ fn carve(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(import_document, m)?)?;
     m.add_function(wrap_pyfunction!(write, m)?)?;
     m.add_function(wrap_pyfunction!(to_html, m)?)?;
+    m.add_function(wrap_pyfunction!(render_with_host, m)?)?;
     m.add_function(wrap_pyfunction!(to_html_with_extensions, m)?)?;
     m.add_function(wrap_pyfunction!(extensions, m)?)?;
     m.add_function(wrap_pyfunction!(to_carve, m)?)?;
