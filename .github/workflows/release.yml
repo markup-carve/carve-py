@@ -242,7 +242,7 @@ jobs:
     runs-on: ${{ matrix.wheel.runner }}
     timeout-minutes: 30
     needs: [build-wheels, changes]
-    if: needs.changes.outputs.run == 'true'
+    if: needs.changes.outputs.run == 'true' && github.head_ref != 'next2'
     strategy:
       fail-fast: false
       matrix:
