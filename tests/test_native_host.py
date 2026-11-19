@@ -85,3 +85,23 @@ def test_code_fence_can_take_a_host_renderer_through_a_transform():
                                     transforms=[claim])
     assert result["html"] == "<svg>graph TD;</svg>"
     assert result["diagnostics"] == []
+
+
+def test_standard_renderer_remains_selected_with_transform():
+    source = "::: tabs\n::: tab {title=A}\nx\n:::\n:::\n"
+    options = {"extensions": ["carve.tabs"]}
+    renderers = {"carve.tabs": "standard"}
+    expected = carve.to_html(source, extensions=["carve.tabs"], renderers=renderers)
+    assert carve.to_html(source, extensions=["carve.tabs"], renderers=renderers,
+                         transforms=[lambda tree: tree]) == expected
+
+
+def test_declared_version_and_existing_render_options():
+    tree = note_tree()
+    tree["extensions"][0]["version"] = "2"
+    tree["children"][0]["version"] = "2"
+    result = carve.render_with_host("", tree=tree,
+                                    renderers={"ex.note": lambda _: "<aside>version 2</aside>"})
+    assert result["html"] == "<aside>version 2</aside>"
+    assert carve.to_html("Ship :rocket:", {"symbols": {"rocket": "🚀"}},
+                         transforms=[lambda value: value]) == "<p>Ship 🚀</p>"

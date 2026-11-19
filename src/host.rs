@@ -53,13 +53,14 @@ impl DocumentTransform for PythonTransform {
 fn register(
     host: &mut api::Carve,
     name: String,
+    version: String,
     renderers: Vec<(Channel, Box<dyn Renderer>)>,
     transform: Option<Box<dyn DocumentTransform>>,
 ) -> PyResult<()> {
     host.register_extension(Extension {
         declaration: ExtensionDeclaration {
             name,
-            version: "1".into(),
+            version,
             required: false,
             slots: Vec::new(),
         },
@@ -78,46 +79,47 @@ pub(super) fn render_host(
     transforms: Option<&Bound<'_, PyList>>,
 ) -> PyResult<Py<PyAny>> {
     let mut host = api::Carve::new();
-    let mut opts = api::Options::default();
+    let opts = if let Some(options) = options {
+        let value = json_value(options.as_any())?;
+        super::host_options::read(&value).map_err(|e| super::option_error(py, e))?
+    } else {
+        api::Options::default()
+    };
     if let Some(options) = options {
-        for (key, _) in options.iter() {
-            let key: String = key.extract()?;
-            if !matches!(key.as_str(), "mode" | "sections" | "rawHtml" | "extensions") {
-                return Err(super::option_error(
-                    py,
-                    format!("native host does not read option {key}"),
-                ));
-            }
-        }
-        if let Some(mode) = options.get_item("mode")? {
-            let mode: String = mode.extract()?;
-            opts.mode = match mode.as_str() {
-                "interactive" => api::Mode::Interactive,
-                "static" => api::Mode::Static,
-                _ => {
-                    return Err(super::option_error(
-                        py,
-                        "mode must be interactive or static",
-                    ))
-                }
-            };
-        }
-        if let Some(sections) = options.get_item("sections")? {
-            opts.sections = sections.extract()?;
-        }
-        if let Some(raw) = options.get_item("rawHtml")? {
-            opts.raw_html = raw.extract()?;
-        }
         if let Some(standard) = options.get_item("extensions")? {
             for name in standard.extract::<Vec<String>>()? {
-                host.enable_standard(&name, false)
+                let selected = renderers
+                    .and_then(|items| items.get_item(&name).ok().flatten())
+                    .and_then(|value| value.extract::<String>().ok())
+                    .is_some_and(|value| value == "standard");
+                host.enable_standard(&name, selected)
                     .map_err(|e| super::CarveError::new_err(e.to_string()))?;
             }
         }
     }
+    let tree_value = tree.map(json_value).transpose()?;
     if let Some(renderers) = renderers {
         for (name, config) in renderers.iter() {
             let name: String = name.extract()?;
+            let inferred = tree_value
+                .as_ref()
+                .and_then(|value| value.get("extensions"))
+                .and_then(Value::as_array)
+                .and_then(|rows| {
+                    rows.iter()
+                        .find(|row| row.get("name").and_then(Value::as_str) == Some(name.as_str()))
+                })
+                .and_then(|row| row.get("version"))
+                .and_then(Value::as_str)
+                .unwrap_or("1");
+            let version = if let Ok(map) = config.cast::<PyDict>() {
+                map.get_item("version")?
+                    .map(|value| value.extract::<String>())
+                    .transpose()?
+                    .unwrap_or_else(|| inferred.to_string())
+            } else {
+                inferred.to_string()
+            };
             let mut channels: Vec<(Channel, Box<dyn Renderer>)> = Vec::new();
             if config.is_callable() {
                 let callback = config.unbind();
@@ -128,6 +130,9 @@ pub(super) fn render_host(
                 channels.push((Channel::BuildTime, Box::new(PythonRenderer(callback))));
             } else if let Ok(map) = config.cast::<PyDict>() {
                 for (channel, callback) in map.iter() {
+                    if channel.extract::<String>()? == "version" {
+                        continue;
+                    }
                     if !callback.is_callable() {
                         return Err(super::option_error(py, "renderer must be callable"));
                     }
@@ -147,15 +152,13 @@ pub(super) fn render_host(
             } else if config.is_instance_of::<PyString>() {
                 let selection: String = config.extract()?;
                 if selection == "standard" {
-                    host.enable_standard(&name, true)
-                        .map_err(|e| super::CarveError::new_err(e.to_string()))?;
                     continue;
                 }
                 return Err(super::option_error(py, "renderer must be callable"));
             } else {
                 return Err(super::option_error(py, "renderer must be callable"));
             }
-            register(&mut host, name, channels, None)?;
+            register(&mut host, name, version, channels, None)?;
         }
     }
     if let Some(transforms) = transforms {
@@ -166,13 +169,14 @@ pub(super) fn render_host(
             register(
                 &mut host,
                 format!("host.transform.{index}"),
+                "1".into(),
                 Vec::new(),
                 Some(Box::new(PythonTransform(callback.unbind()))),
             )?;
         }
     }
-    let rendered = if let Some(tree) = tree {
-        let value = json_value(tree)?;
+    let rendered = if tree.is_some() {
+        let value = tree_value.as_ref().expect("tree value parsed");
         let tree = api::decode_tree(&value.to_string())
             .map_err(|e| super::CarveError::new_err(e.to_string()))?;
         host.render_tree_with_diagnostics(&tree, &opts)

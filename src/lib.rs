@@ -1,6 +1,7 @@
 //! Python transport for the public Carve 0.2 JSON call boundary.
 
 mod host;
+mod host_options;
 
 use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
