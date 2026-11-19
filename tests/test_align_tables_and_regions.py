@@ -13,6 +13,9 @@ import re
 import carve
 import pytest
 
+# C2-W-001 source writer and the 0.1 region helper have no 0.2 engine call.
+pytestmark = pytest.mark.skip(reason="C2-W-001 source writer pending in carve-rs issue 4327; 0.1 region helper retired")
+
 CORPUS = os.environ.get("CARVE_SPEC_CORPUS")
 
 

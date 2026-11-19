@@ -1,36 +1,53 @@
-//! PyO3 native binding exposing the `carve` (carve-rs) engine to Python.
-//!
-//! The compiled module is imported as `import carve` and provides:
-//!   - `carve.to_html(source)`                       core, no extensions
-//!   - `carve.to_html(source, extensions=[...])`     named extensions
-//!   - `carve.to_html(source, mode='static')`        static render mode
-//!   - `carve.to_html(source, renderers={...})`      build-time renderers
-//!   - `carve.to_html(source, symbols={...})`        `:name:` symbol map
-//!   - `carve.to_html_with_extensions(source, exts)` explicit variant
-//!   - `carve.to_markdown(source)` / `to_plain_text(source)` / `to_ansi(source)`
-//!   - `carve.extensions()`                          list of supported names
-//!   - `carve.__version__`
-//!
-//! We never reimplement the parser; every call delegates to carve-rs.
+//! Python transport for the public Carve 0.2 JSON call boundary.
 
-use carve_rs::extensions::registry;
-use carve_rs::extensions::{
-    Autolink, AutolinkOptions, CodeGroup, CodeGroupOptions, ContentMode, CrossrefStyle,
-    ExternalLinks, ExternalLinksOptions, FencedRender, FencedRenderOptions, HeadingLevelShift,
-    HeadingLevelShiftOptions, HeadingNumbers, HeadingNumbersOptions, HeadingPermalinks,
-    HeadingPermalinksOptions, HeadingReference, HeadingReferenceOptions, ImgFence, ListType,
-    MathBlock, MathBlockOptions, Position, TableOfContents, TableOfContentsOptions, Tabs, TabsMode,
-    TabsOptions, Wikilinks, WikilinksOptions,
-};
-use carve_rs::{CarveExtension, IncludeRegionMode, Mode, Options, Profile, StaticRenderers};
 use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyString};
-use std::any::Any;
+use pyo3::types::{PyAny, PyDict, PyString};
 use std::cell::RefCell;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::Once;
 
+pyo3::create_exception!(carve, EnginePanicError, PyException);
+pyo3::create_exception!(carve, CarveError, PyValueError);
+
+thread_local! {
+    static PANIC_LOCATION: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
+fn install_panic_hook() {
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        let previous = panic::take_hook();
+        panic::set_hook(Box::new(move |info| {
+            PANIC_LOCATION.with(|slot| {
+                *slot.borrow_mut() = info
+                    .location()
+                    .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()));
+            });
+            previous(info);
+        }));
+    });
+}
+
+fn guard<T>(f: impl FnOnce() -> PyResult<T>) -> PyResult<T> {
+    match panic::catch_unwind(AssertUnwindSafe(f)) {
+        Ok(result) => result,
+        Err(payload) => {
+            let message = payload
+                .downcast_ref::<String>()
+                .cloned()
+                .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).to_string()))
+                .unwrap_or_else(|| "panic".to_string());
+            let location = PANIC_LOCATION.with(|slot| slot.borrow_mut().take());
+            Err(EnginePanicError::new_err(match location {
+                Some(at) => format!("the Carve engine panicked at {at}: {message}"),
+                None => format!("the Carve engine panicked: {message}"),
+            }))
+        }
+    }
+}
+
+/// Replace lone surrogates as the 0.1 binding did before entering Rust.
 struct Source(String);
 
 impl<'py> FromPyObject<'_, 'py> for Source {
@@ -44,1769 +61,341 @@ impl<'py> FromPyObject<'_, 'py> for Source {
         let units = bytes
             .chunks_exact(2)
             .map(|pair| u16::from_le_bytes([pair[0], pair[1]]));
-        let text = std::char::decode_utf16(units)
-            .map(|character| character.unwrap_or('\u{FFFD}'))
-            .collect();
-        Ok(Self(text))
-    }
-}
-
-// ---------------------------------------------------------------------------
-// FFI panic safety
-// ---------------------------------------------------------------------------
-//
-// PyO3 already wraps every exposed call in catch_unwind, which is why the
-// interpreter survives a panic here, but it raises the result as
-// `pyo3_runtime.PanicException`, built over `PyBaseException` and not
-// configurable. `except Exception` - the handler a host actually writes - does
-// not see a BaseException, so a panic walked straight past it (carve-py#94).
-//
-// Everything Python can reach therefore runs inside `guard`, which catches the
-// unwind FIRST and raises `carve.EnginePanicError`, an `Exception` subclass.
-// The `panic = "unwind"` compile flag is still what makes any of this possible,
-// which is why scripts/check-panic-unwind.sh stays.
-
-pyo3::create_exception!(
-    carve,
-    IncludeRegionError,
-    PyValueError,
-    "The selected include region is missing, or a region marker is malformed \
-     or unpaired. `rule` carries the engine's warning rule id."
-);
-
-pyo3::create_exception!(
-    carve,
-    EnginePanicError,
-    PyException,
-    "The Carve engine panicked. The document is not renderable, but the \
-     interpreter is unaffected; report the input as an engine defect."
-);
-
-thread_local! {
-    /// Where the most recent panic on this thread came from.
-    ///
-    /// The payload `catch_unwind` hands back carries the message but not the
-    /// location, and the location is the half that identifies the engine bug.
-    static PANIC_LOCATION: RefCell<Option<String>> = const { RefCell::new(None) };
-}
-
-/// Record panic locations without taking over panic reporting.
-///
-/// The previous hook still runs, so the `thread '<unnamed>' panicked at ...`
-/// report and any `RUST_BACKTRACE` output are unchanged.
-fn install_panic_hook() {
-    static ONCE: Once = Once::new();
-    ONCE.call_once(|| {
-        let previous = panic::take_hook();
-        panic::set_hook(Box::new(move |info| {
-            let location = info
-                .location()
-                .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()));
-            PANIC_LOCATION.with(|slot| *slot.borrow_mut() = location);
-            previous(info);
-        }));
-    });
-}
-
-/// Turn a caught unwind payload into `EnginePanicError`.
-fn engine_panic_error(payload: Box<dyn Any + Send>) -> PyErr {
-    let message = if let Some(m) = payload.downcast_ref::<&'static str>() {
-        (*m).to_string()
-    } else if let Some(m) = payload.downcast_ref::<String>() {
-        m.clone()
-    } else {
-        "panic".to_string()
-    };
-    let message = match PANIC_LOCATION.with(|slot| slot.borrow_mut().take()) {
-        Some(at) => format!("the Carve engine panicked at {at}: {message}"),
-        None => format!("the Carve engine panicked: {message}"),
-    };
-    EnginePanicError::new_err(message)
-}
-
-/// Run an exposed call with this module's panic net in front of PyO3's.
-fn guard<T>(f: impl FnOnce() -> PyResult<T>) -> PyResult<T> {
-    match panic::catch_unwind(AssertUnwindSafe(f)) {
-        Ok(result) => result,
-        Err(payload) => Err(engine_panic_error(payload)),
-    }
-}
-
-/// Panic deliberately inside the extension, so a test can observe the FFI
-/// panic contract rather than assuming it.
-///
-/// Nothing but a test calls this. It exists because no Carve input panics the
-/// pinned engine - `to_html("|{.r}")` is fixed in carve-lang 0.1.8 - so an
-/// input-based test would be disarmed by the next engine fix without saying so.
-#[pyfunction]
-fn _panic_probe() -> PyResult<String> {
-    guard(|| panic!("deliberate panic from the Carve extension panic probe"))
-}
-
-/// HTML-escape a string for the renderer-failure fallback path.
-///
-/// carve-rs inserts a *present* static renderer's return value verbatim (it is
-/// the renderer's job to produce safe HTML). So when our Python wrapper has to
-/// fall back to the construct source - because the callable raised or returned
-/// a non-string - that source MUST be escaped here, or a source containing HTML
-/// (e.g. `<img onerror=...>`) would be emitted raw. The no-renderer path inside
-/// carve-rs already escapes its `<pre><code>` source block; this keeps the
-/// failing-renderer floor equally safe rather than a raw-passthrough hole.
-fn escape_html(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for ch in s.chars() {
-        match ch {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&#39;"),
-            _ => out.push(ch),
-        }
-    }
-    out
-}
-
-/// The engine's registry key for a Python-facing name.
-///
-/// Registry keys are kebab-case; this binding has always accepted (and mkdocs
-/// configs have always written) the snake_case spellings `external_links`,
-/// `math_block`, `heading_permalinks` and friends. Both reach the same
-/// extension, so neither spelling has to be memorized and no existing config
-/// breaks.
-fn registry_key(name: &str) -> String {
-    name.replace('_', "-")
-}
-
-/// Map a Python-facing extension name to an owned boxed carve-rs extension.
-///
-/// Returns an error for unknown names so typos surface immediately in Python
-/// rather than silently producing core output.
-fn build_extension(name: &str) -> PyResult<Box<dyn CarveExtension>> {
-    registry::by_key(&registry_key(name)).ok_or_else(|| {
-        PyValueError::new_err(format!(
-            "unknown carve extension: {name:?} (supported: {})",
-            supported().join(", ")
+        Ok(Self(
+            std::char::decode_utf16(units)
+                .map(|character| character.unwrap_or('\u{FFFD}'))
+                .collect(),
         ))
-    })
-}
-
-fn option_error(extension: &str, key: &str, accepted: &[&str]) -> PyErr {
-    PyValueError::new_err(format!(
-        "unknown option {key:?} for extension {extension:?} (accepted: {})",
-        accepted.join(", ")
-    ))
-}
-
-fn check_keys(dict: &Bound<'_, PyDict>, extension: &str, accepted: &[&str]) -> PyResult<()> {
-    for (key, _) in dict.iter() {
-        let key: String = key.extract()?;
-        if !accepted.contains(&key.as_str()) {
-            return Err(option_error(extension, &key, accepted));
-        }
     }
-    Ok(())
 }
 
-macro_rules! set_opt {
-    ($dict:expr, $opts:expr, $name:expr, $field:ident, $ty:ty) => {
-        if let Some(value) = $dict.get_item(stringify!($field))? {
-            $opts.$field = value.extract::<$ty>().map_err(|_| {
-                pyo3::exceptions::PyTypeError::new_err(format!(
-                    "option {:?} for extension {:?} has the wrong type",
-                    stringify!($field),
-                    $name
-                ))
-            })?;
-        }
-    };
-}
-
-fn enum_value<T: Copy>(
-    dict: &Bound<'_, PyDict>,
-    key: &str,
-    extension: &str,
-    values: &[(&str, T)],
-) -> PyResult<Option<T>> {
-    let Some(value) = dict.get_item(key)? else {
-        return Ok(None);
-    };
-    let value: String = value.extract().map_err(|_| {
-        pyo3::exceptions::PyTypeError::new_err(format!(
-            "option {key:?} for extension {extension:?} has the wrong type"
-        ))
-    })?;
-    values.iter().find(|(name, _)| *name == value).map(|(_, v)| Some(*v)).ok_or_else(||
-        PyValueError::new_err(format!("unknown value {value:?} for option {key:?} of extension {extension:?} (accepted: {})", values.iter().map(|(n, _)| *n).collect::<Vec<_>>().join(", "))))
-}
-
-fn build_configured_extension(
+fn request<'py>(
+    py: Python<'py>,
     name: &str,
-    dict: &Bound<'_, PyDict>,
-) -> PyResult<Box<dyn CarveExtension>> {
-    let key = registry_key(name);
-    // Validate the name through the registry first, keeping its established error.
-    if registry::by_key(&key).is_none() {
-        return build_extension(name);
+    source: Option<&str>,
+    options: Option<Bound<'py, PyDict>>,
+) -> PyResult<Bound<'py, PyDict>> {
+    let req = PyDict::new(py);
+    req.set_item("call", name)?;
+    if let Some(source) = source {
+        req.set_item("source", source)?;
     }
-    macro_rules! configured {
-        ($ty:ty, $ctor:path, [$($field:ident : $ft:ty),* $(,)?]) => {{
-            const KEYS: &[&str] = &[$(stringify!($field)),*];
-            check_keys(dict, &key, KEYS)?;
-            let mut opts = <$ty>::default();
-            $(set_opt!(dict, opts, &key, $field, $ft);)*
-            Ok(Box::new($ctor(opts)) as Box<dyn CarveExtension>)
-        }};
+    if let Some(options) = options {
+        req.set_item("options", options)?;
     }
-    match key.as_str() {
-        "autolink" => {
-            configured!(AutolinkOptions, Autolink::with_options, [allowed_schemes: Vec<String>])
-        }
-        "code-group" => {
-            configured!(CodeGroupOptions, CodeGroup::with_options, [wrapper_class: String, panel_class: String, label_class: String, radio_class: String, id_prefix: String])
-        }
-        "external-links" => {
-            configured!(ExternalLinksOptions, ExternalLinks::with_options, [target: String, rel: String, nofollow: bool])
-        }
-        "heading-level-shift" => {
-            configured!(HeadingLevelShiftOptions, HeadingLevelShift::with_options, [shift: u8])
-        }
-        "heading-permalinks" => {
-            configured!(HeadingPermalinksOptions, HeadingPermalinks::with_options, [symbol: String, css_class: String, aria_label: String, levels: Vec<u8>, prepend: bool, show_on_hover: bool, copy_to_clipboard: bool, lowercase_ids: bool])
-        }
-        "heading-reference" => {
-            configured!(HeadingReferenceOptions, HeadingReference::with_options, [css_class: String])
-        }
-        "math-block" => configured!(MathBlockOptions, MathBlock::with_options, [language: String]),
-        "wikilinks" => {
-            configured!(WikilinksOptions, Wikilinks::with_options, [css_class: String, new_window: bool])
-        }
-        "heading-numbers" => {
-            const KEYS: &[&str] = &["min_level", "label", "crossref"];
-            check_keys(dict, &key, KEYS)?;
-            let mut opts = HeadingNumbersOptions::default();
-            set_opt!(dict, opts, &key, min_level, u8);
-            set_opt!(dict, opts, &key, label, String);
-            if let Some(v) = enum_value(
-                dict,
-                "crossref",
-                &key,
-                &[
-                    ("number", CrossrefStyle::Number),
-                    ("number-title", CrossrefStyle::NumberTitle),
-                    ("title", CrossrefStyle::Title),
-                ],
-            )? {
-                opts.crossref = v;
-            }
-            Ok(Box::new(HeadingNumbers::with_options(opts)))
-        }
-        "table-of-contents" => {
-            const KEYS: &[&str] = &[
-                "min_level",
-                "max_level",
-                "list_type",
-                "css_class",
-                "position",
-                "lowercase_ids",
-            ];
-            check_keys(dict, &key, KEYS)?;
-            let mut opts = TableOfContentsOptions::default();
-            set_opt!(dict, opts, &key, min_level, u8);
-            set_opt!(dict, opts, &key, max_level, u8);
-            set_opt!(dict, opts, &key, css_class, String);
-            set_opt!(dict, opts, &key, lowercase_ids, bool);
-            if let Some(v) = enum_value(
-                dict,
-                "list_type",
-                &key,
-                &[("ul", ListType::Ul), ("ol", ListType::Ol)],
-            )? {
-                opts.list_type = v;
-            }
-            if let Some(v) = enum_value(
-                dict,
-                "position",
-                &key,
-                &[("top", Position::Top), ("bottom", Position::Bottom)],
-            )? {
-                opts.position = v;
-            }
-            Ok(Box::new(TableOfContents::with_options(opts)))
-        }
-        "tabs" => {
-            const KEYS: &[&str] = &[
-                "mode",
-                "wrapper_class",
-                "tab_class",
-                "label_class",
-                "radio_class",
-                "id_prefix",
-            ];
-            check_keys(dict, &key, KEYS)?;
-            let mut opts = TabsOptions::default();
-            set_opt!(dict, opts, &key, wrapper_class, String);
-            set_opt!(dict, opts, &key, tab_class, String);
-            set_opt!(dict, opts, &key, label_class, String);
-            set_opt!(dict, opts, &key, radio_class, String);
-            set_opt!(dict, opts, &key, id_prefix, String);
-            if let Some(v) = enum_value(
-                dict,
-                "mode",
-                &key,
-                &[("css", TabsMode::Css), ("aria", TabsMode::Aria)],
-            )? {
-                opts.mode = v;
-            }
-            Ok(Box::new(Tabs::with_options(opts)))
-        }
-        "fenced-render" => {
-            const KEYS: &[&str] = &[
-                "languages",
-                "css_class",
-                "tag",
-                "content_mode",
-                "wrap_in_figure",
-                "figure_class",
-            ];
-            check_keys(dict, &key, KEYS)?;
-            let mode = enum_value(
-                dict,
-                "content_mode",
-                &key,
-                &[("text", ContentMode::Text), ("json", ContentMode::Json)],
-            )?
-            .unwrap_or(ContentMode::Text);
-            // Built through the engine's constructor with what the caller
-            // gave, because it DERIVES the rest: `css_class` from the first
-            // language, `tag` from the mode (`div` for json, else `pre`), and
-            // `figure_class` from `css_class`. Setting those first and
-            // overwriting them afterwards produced a json-mode block still
-            // wearing a `pre` tag.
-            let languages = dict
-                .get_item("languages")?
-                .map(|v| v.extract::<Vec<String>>())
-                .transpose()?
-                .unwrap_or_else(|| vec!["mermaid".into()]);
-            let css_class = dict
-                .get_item("css_class")?
-                .map(|v| v.extract::<String>())
-                .transpose()?;
-            let tag = dict
-                .get_item("tag")?
-                .map(|v| v.extract::<String>())
-                .transpose()?;
-            let mut opts = FencedRenderOptions::new(languages, css_class, tag, mode);
-            set_opt!(dict, opts, &key, wrap_in_figure, bool);
-            set_opt!(dict, opts, &key, figure_class, String);
-            Ok(Box::new(FencedRender::with_options(opts)))
-        }
-        "img-fence" => {
-            const KEYS: &[&str] = &[
-                "allow_style",
-                "allow_links",
-                "allow_animation",
-                "allow_external_images",
-            ];
-            check_keys(dict, &key, KEYS)?;
-            let get = |k: &str| -> PyResult<bool> {
-                Ok(dict
-                    .get_item(k)?
-                    .map(|v| v.extract::<bool>())
-                    .transpose()?
-                    .unwrap_or(false))
-            };
-            Ok(Box::new(
-                ImgFence::new()
-                    .allow_style(get("allow_style")?)
-                    .allow_links(get("allow_links")?)
-                    .allow_animation(get("allow_animation")?)
-                    .allow_external_images(get("allow_external_images")?),
-            ))
-        }
-        _ => Err(PyValueError::new_err(format!(
-            "extension {key:?} takes no options"
-        ))),
-    }
+    Ok(req)
 }
 
-/// Every extension name this build accepts, taken from the engine.
-///
-/// This used to be a hand-written array beside a hand-written match, and
-/// nothing compared either against carve-rs. An extension could land in the
-/// engine and stay invisible from Python indefinitely, which is exactly what
-/// happened: ten of them had accumulated - glossary, index, table of contents,
-/// heading numbers and more - with no test able to notice.
-fn supported() -> Vec<String> {
-    registry::keys().map(str::to_string).collect()
-}
-
-/// Build an owned vec of boxed extensions from the requested names.
-fn boxed_extensions(
-    names: &[String],
-    configs: Option<&Bound<'_, PyDict>>,
-) -> PyResult<Vec<Box<dyn CarveExtension>>> {
-    if let Some(configs) = configs {
-        for (name, _) in configs.iter() {
-            let name: String = name.extract()?;
-            build_extension(&name)?;
-            if !names
-                .iter()
-                .any(|enabled| registry_key(enabled) == registry_key(&name))
+fn execute(py: Python<'_>, req: &Bound<'_, PyDict>) -> PyResult<Py<PyAny>> {
+    let json = py.import("json")?;
+    let encoded: String = json.call_method1("dumps", (req,))?.extract()?;
+    let response = carve2::api::json::call(&encoded);
+    let decoded = json.call_method1("loads", (response,))?;
+    let decoded = decoded.cast::<PyDict>()?;
+    if let Some(error) = decoded.get_item("error")? {
+        let error = error.cast::<PyDict>()?;
+        let message: String = error
+            .get_item("message")?
+            .ok_or_else(|| CarveError::new_err("engine error has no message"))?
+            .extract()?;
+        let message = if message.contains("not available") || message.contains("unsupported") {
+            match req
+                .get_item("target")?
+                .and_then(|value| value.extract::<String>().ok())
             {
-                return Err(PyValueError::new_err(format!(
-                    "extension {name:?} has options but is not in extensions"
-                )));
+                Some(target) => format!("{target} writer not available yet: {message}"),
+                None => format!("{message}; engine feature not available yet"),
             }
-        }
-    }
-    names
-        .iter()
-        .map(|name| {
-            if let Some(configs) = configs {
-                // Matched on the NORMALIZED key, both sides. Comparing the
-                // spellings directly accepted `heading_permalinks` during
-                // validation and then failed to find it here, so the options
-                // were dropped without a word - the exact silence this whole
-                // feature exists to remove.
-                let wanted = registry_key(name);
-                for (config_name, value) in configs.iter() {
-                    let config_name: String = config_name.extract()?;
-                    if registry_key(&config_name) != wanted {
-                        continue;
-                    }
-                    let dict = value.cast::<PyDict>().map_err(|_| {
-                        pyo3::exceptions::PyTypeError::new_err(format!(
-                            "options for extension {name:?} must be a mapping"
-                        ))
-                    })?;
-                    return build_configured_extension(name, dict);
-                }
-            }
-            build_extension(name)
-        })
-        .collect()
-}
-
-/// Map a Python-facing mode string to a carve-rs [`Mode`].
-///
-/// Rejects any unknown string with `ValueError`, mirroring the spec's
-/// "MUST reject an unknown mode value" (no guessing). Omitting the mode in
-/// Python defaults to `"interactive"`, so existing callers are unaffected.
-fn parse_mode(mode: &str) -> PyResult<Mode> {
-    match mode {
-        "interactive" => Ok(Mode::Interactive),
-        "static" => Ok(Mode::Static),
-        other => Err(PyValueError::new_err(format!(
-            "unknown carve render mode: {other:?} (supported: \"interactive\", \"static\")"
-        ))),
-    }
-}
-
-/// Wrap a Python diagram callable `(str) -> str` into a carve-rs closure.
-///
-/// The closure acquires the GIL, calls the Python callable with the construct
-/// source, and returns its string result. If the callable raises or returns a
-/// non-string, the closure degrades to the HTML-ESCAPED source, so a bad
-/// renderer never produces blank output and can never inject raw HTML. (A
-/// present renderer's return value is emitted verbatim by carve-rs, so the
-/// fallback must escape rather than pass source through raw.) The callable is
-/// stored as a thread-safe `Py<PyAny>`.
-fn wrap_diagram(callable: Py<PyAny>) -> Box<dyn Fn(&str) -> String + 'static> {
-    Box::new(move |src: &str| {
-        Python::attach(|py| {
-            match callable.call1(py, (src,)) {
-                Ok(result) => match result.extract::<String>(py) {
-                    Ok(s) => s,
-                    // Non-string return: fall back to escaped source.
-                    Err(_) => escape_html(src),
-                },
-                // Callable raised: fall back to escaped source rather than
-                // propagating (the static path has no error channel).
-                Err(_) => escape_html(src),
-            }
-        })
-    })
-}
-
-/// Wrap a Python math callable `(str, bool) -> str` into a carve-rs closure.
-///
-/// Same contract as [`wrap_diagram`] (including the HTML-escaped fallback on a
-/// raising / non-string-returning callable), but the callable receives the TeX
-/// source and a `display` flag (`True` for block / display math, `False` for
-/// inline).
-type MathRenderer = Box<dyn Fn(&str, bool) -> String + 'static>;
-
-fn wrap_math(callable: Py<PyAny>) -> MathRenderer {
-    Box::new(move |tex: &str, display: bool| {
-        Python::attach(|py| {
-            match callable.call1(py, (tex, display)) {
-                Ok(result) => match result.extract::<String>(py) {
-                    Ok(s) => s,
-                    // Non-string return: fall back to escaped source.
-                    Err(_) => escape_html(tex),
-                },
-                // Callable raised: fall back to escaped source.
-                Err(_) => escape_html(tex),
-            }
-        })
-    })
-}
-
-/// Build a [`StaticRenderers`] from a Python dict of callables.
-///
-/// The `"math"` key takes a callable `(str, bool) -> str`. Every other key is a
-/// **diagram fence css class** (`"mermaid"`, `"chart"`, `"plantuml"`,
-/// `"graphviz"`, `"d2"`, ...) mapped to a callable `(str) -> str`; the engine
-/// keys diagram renderers by css class, so a static render of that fence
-/// consults the matching entry (else degrades to source).
-fn build_renderers(renderers: &Bound<'_, PyDict>) -> PyResult<StaticRenderers> {
-    let mut out = StaticRenderers::default();
-    for (key, value) in renderers.iter() {
-        let name: String = key.extract()?;
-        let callable: Py<PyAny> = value.unbind();
-        if name == "math" {
-            out.math = Some(wrap_math(callable));
-        } else if DIAGRAM_RENDERER_KEYS.contains(&name.as_str()) {
-            // Keyed by the fence css class the preset emits.
-            out.diagrams.insert(name, wrap_diagram(callable));
         } else {
-            return Err(PyValueError::new_err(format!(
-                "unknown renderer key: {name:?} (supported: \"math\", {})",
-                DIAGRAM_RENDERER_KEYS
-                    .iter()
-                    .map(|k| format!("{k:?}"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )));
-        }
-    }
-    Ok(out)
-}
-
-/// Diagram-renderer keys accepted by `renderers={...}`: the fence css class each
-/// FencedRender preset emits. Validated so a typo fails fast instead of
-/// silently doing nothing.
-const DIAGRAM_RENDERER_KEYS: &[&str] = &[
-    "mermaid",
-    "chart",
-    "plantuml",
-    "graphviz",
-    "d2",
-    "wavedrom",
-    "abc",
-    "vega-lite",
-];
-
-/// Lower a Python `symbols` dict into owned `(name, value)` pairs.
-///
-/// Keys and values must both be `str`; anything else raises `TypeError` from
-/// the extraction, so a mistyped map fails fast instead of silently dropping
-/// entries.
-fn build_symbols(symbols: &Bound<'_, PyDict>) -> PyResult<Vec<(String, String)>> {
-    let mut out = Vec::with_capacity(symbols.len());
-    for (key, value) in symbols.iter() {
-        let name: String = key.extract()?;
-        let value: String = value.extract()?;
-        out.push((name, value));
-    }
-    Ok(out)
-}
-
-/// Run `f` with an `Options` that borrows the given owned extensions, applying
-/// the requested render mode, static renderers and symbol map.
-///
-/// `Options<'a>` holds `&'a dyn CarveExtension`, so the owned boxes must
-/// outlive the borrow. Both live in this single stack frame, satisfying the
-/// lifetime without leaking.
-#[allow(clippy::too_many_arguments)]
-fn with_options<T, F>(
-    names: &[String],
-    extension_options: Option<&Bound<'_, PyDict>>,
-    mode: Mode,
-    renderers: StaticRenderers,
-    symbols: &[(String, String)],
-    safe: bool,
-    profile: Option<&str>,
-    engine_options: EngineOptions,
-    f: F,
-) -> PyResult<T>
-where
-    F: FnOnce(&Options<'_>) -> PyResult<T>,
-{
-    let owned = boxed_extensions(names, extension_options)?;
-    let mut options = Options::new().with_mode(mode).with_renderers(renderers);
-    for ext in &owned {
-        options = options.with_extension(ext.as_ref());
-    }
-    for (name, value) in symbols {
-        options = options.with_symbol(name.clone(), value.clone());
-    }
-    if safe {
-        options = options.with_raw_html(false);
-    }
-    if let Some(name) = profile {
-        options = options.with_profile(parse_profile(name)?);
-    }
-    options = engine_options.apply(options);
-    f(&options)
-}
-
-/// [`with_options`] for the single-string entry points.
-#[allow(clippy::too_many_arguments)]
-fn render<F, E>(
-    source: &str,
-    names: &[String],
-    extension_options: Option<&Bound<'_, PyDict>>,
-    mode: Mode,
-    renderers: StaticRenderers,
-    symbols: &[(String, String)],
-    safe: bool,
-    profile: Option<&str>,
-    engine_options: EngineOptions,
-    f: F,
-) -> PyResult<String>
-where
-    F: FnOnce(&str, &Options<'_>) -> Result<String, E>,
-    E: std::fmt::Display,
-{
-    with_options(
-        names,
-        extension_options,
-        mode,
-        renderers,
-        symbols,
-        safe,
-        profile,
-        engine_options,
-        // The fallible engine entry points, so a profile rejection raises
-        // instead of returning an empty string. The infallible
-        // `to_*_with_options` wrappers are `try_...().unwrap_or_default()`,
-        // which would make a rejected 20 KB comment indistinguishable from a
-        // document that legitimately rendered to nothing.
-        |options| f(source, options).map_err(|e| PyValueError::new_err(e.to_string())),
-    )
-}
-
-#[derive(Default, PartialEq)]
-struct EngineOptions {
-    lowercase_heading_ids: Option<bool>,
-    positions: Option<bool>,
-    sections: Option<bool>,
-    source_lines: Option<bool>,
-    mention_url: Option<String>,
-    tag_url: Option<String>,
-    profile_base_host: Option<String>,
-}
-
-impl EngineOptions {
-    fn apply(self, mut options: Options<'_>) -> Options<'_> {
-        if let Some(value) = self.lowercase_heading_ids {
-            options = options.with_lowercase_heading_ids(value);
-        }
-        if let Some(value) = self.positions {
-            options = options.with_positions(value);
-        }
-        if let Some(value) = self.sections {
-            options = options.with_sections(value);
-        }
-        if let Some(value) = self.source_lines {
-            options = options.with_source_lines(value);
-        }
-        if let Some(value) = self.mention_url {
-            options = options.with_mention_url(value);
-        }
-        if let Some(value) = self.tag_url {
-            options = options.with_tag_url(value);
-        }
-        if let Some(value) = self.profile_base_host {
-            options = options.with_profile_base_host(value);
-        }
-        options
-    }
-}
-
-/// Map a profile name to a [`Profile`], or raise Python ValueError.
-///
-/// The four presets are the engine's. An unknown name is reported rather than
-/// silently ignored, matching [`parse_mode`].
-fn parse_profile(name: &str) -> PyResult<Profile> {
-    match name {
-        "full" => Ok(Profile::full()),
-        "article" => Ok(Profile::article()),
-        "comment" => Ok(Profile::comment()),
-        "minimal" => Ok(Profile::minimal()),
-        other => Err(PyValueError::new_err(format!(
-            "unknown carve profile: {other:?} (supported: \"full\", \"article\", \"comment\", \"minimal\")"
-        ))),
-    }
-}
-
-/// Resolve the mode string and renderers dict into the carve-rs types.
-///
-/// `mode` defaults to `"interactive"`. `renderers` is optional; absent it is an
-/// empty `StaticRenderers`. Both are validated here so callers fail fast.
-fn resolve_mode_and_renderers(
-    mode: &str,
-    renderers: Option<&Bound<'_, PyDict>>,
-) -> PyResult<(Mode, StaticRenderers)> {
-    let parsed_mode = parse_mode(mode)?;
-    let static_renderers = match renderers {
-        Some(dict) => build_renderers(dict)?,
-        None => StaticRenderers::default(),
-    };
-    Ok((parsed_mode, static_renderers))
-}
-
-/// Convert Carve source to HTML.
-///
-/// With no `extensions`, this is the core renderer. Pass a list of extension
-/// names to enable opt-in behavior. `mode` is `"interactive"` (default) or
-/// `"static"`; `renderers` is an optional dict of build-time renderer callables
-/// (keys `"mermaid"` / `"chart"` -> `(str) -> str`, `"math"` -> `(str, bool) ->
-/// str`) consulted only on the static HTML path.
-///
-/// `symbols` is an optional `{name: value}` dict: a `:name:` symbol whose name
-/// is in the map renders the mapped value, an unmapped one stays literal
-/// `:name:` text.
-///
-/// SECURITY: a mapped symbol value is inserted as TRUSTED RAW output in the
-/// target format - it is NOT escaped, the same trust class as the `renderers`
-/// map. `symbols={"b": "<b>x</b>"}` emits a real `<b>` element. This is
-/// deliberate: processor configuration is trusted. NEVER build a symbols map
-/// out of untrusted / user-supplied input.
-#[pyfunction]
-#[pyo3(signature = (source, extensions = None, mode = "interactive", renderers = None, symbols = None, safe = false, profile = None, *, extension_options = None, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
-#[allow(clippy::too_many_arguments)]
-fn to_html(
-    source: Source,
-    extensions: Option<Vec<String>>,
-    mode: &str,
-    renderers: Option<Bound<'_, PyDict>>,
-    symbols: Option<Bound<'_, PyDict>>,
-    safe: bool,
-    profile: Option<&str>,
-    extension_options: Option<Bound<'_, PyDict>>,
-    lowercase_heading_ids: Option<bool>,
-    positions: Option<bool>,
-    sections: Option<bool>,
-    source_lines: Option<bool>,
-    mention_url: Option<String>,
-    tag_url: Option<String>,
-    profile_base_host: Option<String>,
-) -> PyResult<String> {
-    guard(move || {
-        let source = source.0;
-        let source = source.as_str();
-        let engine_options = EngineOptions {
-            lowercase_heading_ids,
-            positions,
-            sections,
-            source_lines,
-            mention_url,
-            tag_url,
-            profile_base_host,
+            message
         };
-        let (parsed_mode, static_renderers) = resolve_mode_and_renderers(mode, renderers.as_ref())?;
-        let symbol_pairs = match symbols.as_ref() {
-            Some(dict) => build_symbols(dict)?,
-            None => Vec::new(),
-        };
-        // The fast no-options path only applies in interactive mode with no
-        // renderers, no symbols and no extensions; anything else must go through
-        // `render`.
-        let names = extensions.unwrap_or_default();
-        if names.is_empty()
-            && parsed_mode == Mode::Interactive
-            && symbol_pairs.is_empty()
-            && static_renderers.diagrams.is_empty()
-            && static_renderers.math.is_none()
-            && !safe
-            && profile.is_none()
-            && extension_options.is_none()
-            && engine_options == EngineOptions::default()
-        {
-            return Ok(carve_rs::to_html(source));
+        let exception = CarveError::new_err(message);
+        for key in ["name", "category", "status"] {
+            if let Some(value) = error.get_item(key)? {
+                exception.value(py).setattr(key, value)?;
+            }
         }
-        render(
-            source,
-            &names,
-            extension_options.as_ref(),
-            parsed_mode,
-            static_renderers,
-            &symbol_pairs,
-            safe,
-            profile,
-            engine_options,
-            carve_rs::try_to_html_with_options,
-        )
-    })
+        return Err(exception);
+    }
+    Ok(decoded
+        .get_item("ok")?
+        .ok_or_else(|| CarveError::new_err("engine response has no result"))?
+        .unbind())
 }
 
-/// Convert Carve source to HTML with an explicit (required) extension list.
-///
-/// Supports the same `mode` / `renderers` / `symbols` keywords as [`to_html`]
-/// (including the trusted-raw contract on symbol values).
 #[pyfunction]
-#[pyo3(signature = (source, extensions, mode = "interactive", renderers = None, symbols = None, safe = false, profile = None, *, extension_options = None, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
-#[allow(clippy::too_many_arguments)]
-fn to_html_with_extensions(
-    source: Source,
-    extensions: Vec<String>,
-    mode: &str,
-    renderers: Option<Bound<'_, PyDict>>,
-    symbols: Option<Bound<'_, PyDict>>,
-    safe: bool,
-    profile: Option<&str>,
-    extension_options: Option<Bound<'_, PyDict>>,
-    lowercase_heading_ids: Option<bool>,
-    positions: Option<bool>,
-    sections: Option<bool>,
-    source_lines: Option<bool>,
-    mention_url: Option<String>,
-    tag_url: Option<String>,
-    profile_base_host: Option<String>,
-) -> PyResult<String> {
-    guard(move || {
-        let source = source.0;
-        let source = source.as_str();
-        let (parsed_mode, static_renderers) = resolve_mode_and_renderers(mode, renderers.as_ref())?;
-        let symbol_pairs = match symbols.as_ref() {
-            Some(dict) => build_symbols(dict)?,
-            None => Vec::new(),
-        };
-        render(
-            source,
-            &extensions,
-            extension_options.as_ref(),
-            parsed_mode,
-            static_renderers,
-            &symbol_pairs,
-            safe,
-            profile,
-            EngineOptions {
-                lowercase_heading_ids,
-                positions,
-                sections,
-                source_lines,
-                mention_url,
-                tag_url,
-                profile_base_host,
-            },
-            carve_rs::try_to_html_with_options,
-        )
-    })
+fn call(py: Python<'_>, request: Bound<'_, PyDict>) -> PyResult<Py<PyAny>> {
+    guard(|| execute(py, &request))
 }
 
-/// True when no extensions were requested (None or empty list).
-fn is_core(extensions: &Option<Vec<String>>) -> bool {
-    extensions.as_ref().is_none_or(|v| v.is_empty())
-}
-
-/// Convert Carve source to Markdown.
 #[pyfunction]
-#[pyo3(signature = (source, extensions = None, profile = None, *, extension_options = None, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
-#[allow(clippy::too_many_arguments)]
-fn to_markdown(
-    source: Source,
-    extensions: Option<Vec<String>>,
-    profile: Option<&str>,
-    extension_options: Option<Bound<'_, PyDict>>,
-    lowercase_heading_ids: Option<bool>,
-    positions: Option<bool>,
-    sections: Option<bool>,
-    source_lines: Option<bool>,
-    mention_url: Option<String>,
-    tag_url: Option<String>,
-    profile_base_host: Option<String>,
-) -> PyResult<String> {
-    guard(move || {
-        let source = source.0;
-        let source = source.as_str();
-        let engine_options = EngineOptions {
-            lowercase_heading_ids,
-            positions,
-            sections,
-            source_lines,
-            mention_url,
-            tag_url,
-            profile_base_host,
-        };
-        // The fast path must not swallow `profile` or an engine option: returning
-        // here with either set would accept the keyword and silently ignore it.
-        // `lowercase_heading_ids` is the one that changes this target's output
-        // today, through the renderer's crossref index. The guard is on the whole
-        // struct rather than that one field, because the alternative is a list to
-        // keep in step with the engine, and the day a renderer starts reading one
-        // more option the shortcut would go back to eating it in silence.
-        if is_core(&extensions)
-            && profile.is_none()
-            && extension_options.is_none()
-            && engine_options == EngineOptions::default()
-        {
-            return Ok(carve_rs::to_markdown(source));
-        }
-        render(
-            source,
-            &extensions.unwrap_or_default(),
-            extension_options.as_ref(),
-            Mode::Interactive,
-            StaticRenderers::default(),
-            &[],
-            false,
-            profile,
-            engine_options,
-            carve_rs::try_to_markdown_with_options,
-        )
-    })
-}
-
-/// Convert Carve source to plain text.
-#[pyfunction]
-#[pyo3(signature = (source, extensions = None, profile = None, *, extension_options = None, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
-#[allow(clippy::too_many_arguments)]
-fn to_plain_text(
-    source: Source,
-    extensions: Option<Vec<String>>,
-    profile: Option<&str>,
-    extension_options: Option<Bound<'_, PyDict>>,
-    lowercase_heading_ids: Option<bool>,
-    positions: Option<bool>,
-    sections: Option<bool>,
-    source_lines: Option<bool>,
-    mention_url: Option<String>,
-    tag_url: Option<String>,
-    profile_base_host: Option<String>,
-) -> PyResult<String> {
-    guard(move || {
-        let source = source.0;
-        let source = source.as_str();
-        let engine_options = EngineOptions {
-            lowercase_heading_ids,
-            positions,
-            sections,
-            source_lines,
-            mention_url,
-            tag_url,
-            profile_base_host,
-        };
-        // The fast path must not swallow `profile` or an engine option: returning
-        // here with either set would accept the keyword and silently ignore it.
-        // `lowercase_heading_ids` is the one that changes this target's output
-        // today, through the renderer's crossref index. The guard is on the whole
-        // struct rather than that one field, because the alternative is a list to
-        // keep in step with the engine, and the day a renderer starts reading one
-        // more option the shortcut would go back to eating it in silence.
-        if is_core(&extensions)
-            && profile.is_none()
-            && extension_options.is_none()
-            && engine_options == EngineOptions::default()
-        {
-            return Ok(carve_rs::to_plain_text(source));
-        }
-        render(
-            source,
-            &extensions.unwrap_or_default(),
-            extension_options.as_ref(),
-            Mode::Interactive,
-            StaticRenderers::default(),
-            &[],
-            false,
-            profile,
-            engine_options,
-            carve_rs::try_to_plain_text_with_options,
-        )
-    })
-}
-
-/// Convert Carve source to ANSI-colored terminal text.
-#[pyfunction]
-#[pyo3(signature = (source, extensions = None, profile = None, *, extension_options = None, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
-#[allow(clippy::too_many_arguments)]
-fn to_ansi(
-    source: Source,
-    extensions: Option<Vec<String>>,
-    profile: Option<&str>,
-    extension_options: Option<Bound<'_, PyDict>>,
-    lowercase_heading_ids: Option<bool>,
-    positions: Option<bool>,
-    sections: Option<bool>,
-    source_lines: Option<bool>,
-    mention_url: Option<String>,
-    tag_url: Option<String>,
-    profile_base_host: Option<String>,
-) -> PyResult<String> {
-    guard(move || {
-        let source = source.0;
-        let source = source.as_str();
-        let engine_options = EngineOptions {
-            lowercase_heading_ids,
-            positions,
-            sections,
-            source_lines,
-            mention_url,
-            tag_url,
-            profile_base_host,
-        };
-        // The fast path must not swallow `profile` or an engine option: returning
-        // here with either set would accept the keyword and silently ignore it.
-        // `lowercase_heading_ids` is the one that changes this target's output
-        // today, through the renderer's crossref index. The guard is on the whole
-        // struct rather than that one field, because the alternative is a list to
-        // keep in step with the engine, and the day a renderer starts reading one
-        // more option the shortcut would go back to eating it in silence.
-        if is_core(&extensions)
-            && profile.is_none()
-            && extension_options.is_none()
-            && engine_options == EngineOptions::default()
-        {
-            return Ok(carve_rs::to_ansi(source));
-        }
-        render(
-            source,
-            &extensions.unwrap_or_default(),
-            extension_options.as_ref(),
-            Mode::Interactive,
-            StaticRenderers::default(),
-            &[],
-            false,
-            profile,
-            engine_options,
-            carve_rs::try_to_ansi_with_options,
-        )
-    })
-}
-
-/// Format Carve source into the engine's canonical Carve spelling.
-///
-/// By default a writer refusal comes back as the source as authored, which a
-/// caller cannot tell from a document that was already canonical. `strict`
-/// raises `ValueError` carrying the refusal instead (carve-py#90).
-/// `align_tables` pads table cells into aligned columns.
-#[pyfunction]
-#[pyo3(signature = (source, *, strict = false, align_tables = false))]
-fn to_carve(source: Source, strict: bool, align_tables: bool) -> PyResult<String> {
-    guard(move || {
-        let source = source.0;
-        let source = source.as_str();
-        let options = Options::default().with_align_tables(align_tables);
-        match carve_rs::try_to_carve_with_options(source, &options) {
-            Ok(output) => Ok(output),
-            Err(e) if strict => Err(PyValueError::new_err(e.to_string())),
-            Err(_) => Ok(source.to_string()),
-        }
-    })
-}
-
-/// Resolve `@region:name` in a file's text with the engine's marker rules.
-///
-/// Returns the 1-based, inclusive `(start, end)` content lines; an empty region
-/// has `end == start - 1`. Raises `IncludeRegionError` (its `rule` attribute is
-/// the warning rule id) when the region is missing or a marker is malformed.
-#[pyfunction]
-fn select_include_region(
+#[pyo3(signature = (source, options = None, *, diagnostics = false))]
+fn render(
     py: Python<'_>,
     source: Source,
-    name: &str,
-    mode: &str,
-) -> PyResult<(usize, usize)> {
-    guard(move || {
-        let mode = match mode {
-            "carve" => IncludeRegionMode::Carve,
-            "code" => IncludeRegionMode::Code,
-            other => {
-                return Err(PyValueError::new_err(format!(
-                    "mode must be 'carve' or 'code', got {other:?}"
-                )))
-            }
-        };
-        match carve_rs::select_include_region(&source.0, name, mode) {
-            Ok(region) => Ok((region.start, region.end)),
-            Err(e) => {
-                let err = IncludeRegionError::new_err(format!(
-                    "{}: region {name:?} is missing or its markers are malformed",
-                    e.rule()
-                ));
-                err.value(py).setattr("rule", e.rule())?;
-                Err(err)
-            }
-        }
-    })
-}
-
-/// Validate an AST JSON document and write canonical Carve source.
-#[pyfunction]
-fn render_ast_json(source: Source) -> PyResult<String> {
-    guard(move || {
-        let source = source.0;
-        let source = source.as_str();
-        let doc = carve_rs::from_json(source).map_err(|e| PyValueError::new_err(e.to_string()))?;
-        carve_rs::render_carve(&doc).map_err(|e| PyValueError::new_err(e.to_string()))
-    })
-}
-
-/// Import HTML into canonical Carve and return the loss report beside it.
-#[pyfunction]
-#[pyo3(signature = (source, mode = "safe"))]
-fn from_html(py: Python<'_>, source: Source, mode: &str) -> PyResult<Py<PyDict>> {
-    guard(move || {
-        let source = source.0;
-        let source = source.as_str();
-        let mode = carve_rs::HtmlImportMode::from_name(mode)
-            .ok_or_else(|| PyValueError::new_err("mode must be safe, semantic, or roundtrip"))?;
-        let result = carve_rs::migrate_html(
-            source,
-            &carve_rs::HtmlImportOptions {
-                mode,
-                ..Default::default()
-            },
+    options: Option<Bound<'_, PyDict>>,
+    diagnostics: bool,
+) -> PyResult<Py<PyAny>> {
+    guard(|| {
+        execute(
+            py,
+            &request(
+                py,
+                if diagnostics {
+                    "renderWithDiagnostics"
+                } else {
+                    "render"
+                },
+                Some(&source.0),
+                options,
+            )?,
         )
-        .map_err(|error| PyValueError::new_err(format!("HTML import failed: {error:?}")))?;
-        migration_result(py, result)
     })
 }
 
-/// Import Markdown into canonical Carve with the shared migration result shape.
 #[pyfunction]
-fn from_markdown(py: Python<'_>, source: Source) -> PyResult<Py<PyDict>> {
-    guard(move || {
-        let source = source.0;
-        let source = source.as_str();
-        let result = carve_rs::try_migrate_markdown(source)
-            .map_err(|error| PyValueError::new_err(format!("Markdown import failed: {error}")))?;
-        migration_result(py, result)
-    })
-}
-
-fn migration_result(py: Python<'_>, result: carve_rs::MigrationResult) -> PyResult<Py<PyDict>> {
-    let diagnostics = result
-        .report
-        .diagnostics
-        .iter()
-        .map(|diagnostic| {
-            let item = PyDict::new(py);
-            item.set_item("code", &diagnostic.code)?;
-            item.set_item("message", &diagnostic.message)?;
-            item.set_item("severity", diagnostic.severity.as_str())?;
-            item.set_item("fidelity", diagnostic.fidelity.as_str())?;
-            item.set_item("confidence", diagnostic.confidence.as_str())?;
-            if let Some(path) = &diagnostic.path {
-                item.set_item("path", path)?;
-            }
-            Ok(item.unbind())
-        })
-        .collect::<PyResult<Vec<_>>>()?;
-    let report = PyDict::new(py);
-    report.set_item("schema_version", result.report.schema_version)?;
-    report.set_item("source_format", result.report.source_format.as_str())?;
-    if let Some(mode) = result.report.mode {
-        report.set_item("mode", mode.as_str())?;
-    }
-    if let Some(adapter) = result.report.adapter {
-        report.set_item("adapter", adapter.as_str())?;
-    }
-    report.set_item("diagnostics", diagnostics)?;
-    let output = PyDict::new(py);
-    output.set_item("value", result.value)?;
-    output.set_item("report", report)?;
-    Ok(output.unbind())
-}
-
-/// Read a document's provenance marker, as written by `carve fmt --stamp`.
-///
-/// Returns a dict `{"version": ..., "generated_by": ...}`, or None when the
-/// document carries no marker - the normal case for a hand-written document,
-/// meaning "unknown" rather than "current". `generated_by` is None when the
-/// marker records no writer.
-#[pyfunction]
-fn read_stamp(py: Python<'_>, source: Source) -> PyResult<Option<Py<PyDict>>> {
-    guard(move || {
-        let source = source.0;
-        let source = source.as_str();
-        let Some(stamp) = carve_rs::read_stamp(source) else {
-            return Ok(None);
-        };
-
-        let dict = PyDict::new(py);
-        dict.set_item("version", stamp.version)?;
-        dict.set_item("generated_by", stamp.generated_by)?;
-
-        Ok(Some(dict.unbind()))
-    })
-}
-
-/// Whether a document was last processed under an older spec version than this
-/// engine targets, so the `[behavior]` changelog entries between the two are
-/// worth reviewing.
-///
-/// An unstamped document answers True: its provenance is unknown, and assuming
-/// it is current is the unsafe direction. Pass `current_version` to compare
-/// against something other than this engine's spec version.
-#[pyfunction]
-#[pyo3(signature = (source, current_version = None))]
-fn needs_review(source: Source, current_version: Option<&str>) -> PyResult<bool> {
-    guard(move || {
-        let source = source.0;
-        let source = source.as_str();
-        Ok(carve_rs::needs_review(
-            source,
-            current_version.unwrap_or(carve_rs::SPEC_VERSION),
-        ))
-    })
-}
-
-/// Parse Carve source and return its AST as a JSON string.
-///
-/// The PART 12 exchange shape, produced by the engine itself
-/// (`carve_rs::to_json`) rather than by a walker written here - so this binding
-/// publishes the same bytes as the CLI, carve-rb and every other consumer of
-/// the same engine.
-///
-/// Positions are ON unless `positions=False` is passed. That is not the
-/// engine's default - it is what this function has always done, and the AST
-/// entry points are where a caller wants spans. Changing it would silently
-/// remove `pos` from every existing caller's tree.
-#[pyfunction]
-#[pyo3(signature = (source, *, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
-#[allow(clippy::too_many_arguments)]
-fn parse_json(
-    source: Source,
-    lowercase_heading_ids: Option<bool>,
-    positions: Option<bool>,
-    sections: Option<bool>,
-    source_lines: Option<bool>,
-    mention_url: Option<String>,
-    tag_url: Option<String>,
-    profile_base_host: Option<String>,
-) -> PyResult<String> {
-    guard(move || {
-        let source = source.0;
-        let source = source.as_str();
-        let options = EngineOptions {
-            lowercase_heading_ids,
-            positions: Some(positions.unwrap_or(true)),
-            sections,
-            source_lines,
-            mention_url,
-            tag_url,
-            profile_base_host,
-        }
-        .apply(Options::new());
-        Ok(carve_rs::to_json(&carve_rs::parse_with_options(
-            source, &options,
-        )))
-    })
-}
-
-/// Parse Carve source and return its AST as Python data (dicts and lists).
-///
-/// The same tree as `parse_json`, decoded with the standard library's `json`
-/// module so a caller does not have to. `parse_json` stays available for a
-/// caller that wants to store or forward the bytes without a round trip
-/// through Python objects.
-#[pyfunction]
-#[pyo3(signature = (source, *, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
-#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (source, options = None, *, diagnostics = false, positions = true))]
 fn parse(
     py: Python<'_>,
     source: Source,
-    lowercase_heading_ids: Option<bool>,
-    positions: Option<bool>,
-    sections: Option<bool>,
-    source_lines: Option<bool>,
-    mention_url: Option<String>,
-    tag_url: Option<String>,
-    profile_base_host: Option<String>,
+    options: Option<Bound<'_, PyDict>>,
+    diagnostics: bool,
+    positions: bool,
 ) -> PyResult<Py<PyAny>> {
-    guard(move || {
-        let source = source.0;
-        let source = source.as_str();
-        let json = py.import("json")?;
-        let loaded = json.call_method1(
-            "loads",
-            (parse_json(
-                Source(source.to_owned()),
-                lowercase_heading_ids,
-                positions,
-                sections,
-                source_lines,
-                mention_url,
-                tag_url,
-                profile_base_host,
-            )?,),
-        )?;
-
-        Ok(loaded.unbind())
-    })
-}
-
-/// The block decision trace as JSON lines: a header record, then one record
-/// per source line from the ownership walk.
-#[pyfunction]
-fn decision_trace(source: Source) -> PyResult<String> {
-    guard(move || Ok(carve_rs::decision_trace(&source.0)))
-}
-
-/// Return the list of supported extension names.
-///
-/// Taken from the engine's registry, so a new extension in carve-rs is
-/// reachable from Python as soon as the pin moves - no list here to update, and
-/// none to forget.
-/// Report constructs that parse and render, but not the way the author meant.
-///
-/// The defect class this catches is the silent one: the document parses, the
-/// renderer emits something, and what the author wrote never reaches the page.
-/// An unattached block attribute is the clearest case - `{#id .cls}` above a
-/// blank line attaches to nothing, so the id and the class simply vanish, and
-/// nothing anywhere says so. The engine has always been able to report these;
-/// no Python caller could reach the report.
-///
-/// Returns a list of dicts, one per warning, each carrying `line`, `column`,
-/// `rule`, `message`, `start`, `end`, `file` and `includedBy`.
-///
-/// `start` and `end` are CODEPOINT offsets, not the byte offsets the Rust API
-/// reports. That conversion is the whole reason this is not a two-line
-/// wrapper: `LintWarning` documents its offsets as bytes deliberately, because
-/// a Rust caller slices `&str` with them, and it notes that the unit follows
-/// the host language - carve-js converts to UTF-16 for exactly the same
-/// reason. Handing a byte offset to Python would silently mis-slice every
-/// document containing one non-ASCII character before a warning, which is the
-/// class of bug that only shows up in someone else's language.
-///
-/// `extensions` selects the rules, as for rendering. With `include_root` the
-/// pass also lints every included Carve file and reports include directives
-/// that stay literal; those findings carry `file` (root-relative) and the
-/// `includedBy` chain, top-level first, and `start`/`end` of `None`, since the
-/// offsets would index another text.
-#[pyfunction]
-#[pyo3(signature = (source, extensions = None, *, include_root = None, source_path = None, allow_absolute = false, max_file_bytes = None, max_depth = None, max_bytes = None, max_resolver_calls = None, max_warnings = None, caption_hints = false))]
-#[allow(clippy::too_many_arguments)]
-fn lint(
-    py: Python<'_>,
-    source: Source,
-    extensions: Option<Vec<String>>,
-    include_root: Option<String>,
-    source_path: Option<String>,
-    allow_absolute: bool,
-    max_file_bytes: Option<u64>,
-    max_depth: Option<usize>,
-    max_bytes: Option<usize>,
-    max_resolver_calls: Option<usize>,
-    max_warnings: Option<usize>,
-    caption_hints: bool,
-) -> PyResult<Vec<Py<PyDict>>> {
-    guard(move || {
-        let source = source.0;
-        let source = source.as_str();
-        let names = extensions.unwrap_or_default();
-        let owned = boxed_extensions(&names, None)?;
-        let mut options = Options::new();
-        for ext in &owned {
-            options = options.with_extension(ext.as_ref());
-        }
-        options.lint_caption_looking_paragraph = caption_hints;
-        // The document's own findings come first and are the only ones whose
-        // offsets index `source`, so they are counted from a run without includes.
-        let own = carve_rs::lint_carve_with_options(source, &options);
-        let own_count = own.len();
-        let (warnings, root_real) = match include_root {
-            None => {
-                if source_path.is_some() {
-                    return Err(PyValueError::new_err(
-                        "source_path needs include_root to follow includes",
-                    ));
-                }
-                (own, None)
-            }
-            Some(include_root) => {
-                let mut resolver = carve_rs::FileSystemResolver::new(&include_root)
-                    .map_err(|e| {
-                        PyValueError::new_err(format!(
-                            "cannot use include root {include_root:?}: {e}"
-                        ))
-                    })?
-                    .allow_absolute(allow_absolute);
-                if let Some(bytes) = max_file_bytes {
-                    resolver = resolver.with_max_file_bytes(Some(bytes));
-                }
-                let root_real = std::fs::canonicalize(&include_root)?;
-                let mut include_options = carve_rs::IncludeOptions::new().with_resolver(&resolver);
-                if let Some(path) = source_path {
-                    include_options = include_options.with_source_path(path);
-                }
-                if let Some(depth) = max_depth {
-                    include_options = include_options.with_max_depth(depth);
-                }
-                if let Some(bytes) = max_bytes {
-                    include_options = include_options.with_max_bytes(bytes);
-                }
-                if let Some(calls) = max_resolver_calls {
-                    include_options = include_options.with_max_resolver_calls(calls);
-                }
-                if let Some(cap) = max_warnings {
-                    include_options = include_options.with_max_warnings(cap);
-                }
-                let options = options.with_lint_includes(include_options);
-                (
-                    carve_rs::lint_carve_with_options(source, &options),
-                    Some(root_real),
-                )
-            }
-        };
-
-        // One pass builds a byte -> codepoint table; a byte inside a character
-        // maps to that character, and the final slot is the total.
-        let mut codepoint_at: Vec<usize> = Vec::with_capacity(source.len() + 1);
-        let mut count = 0usize;
-        for (_, ch) in source.char_indices() {
-            for _ in 0..ch.len_utf8() {
-                codepoint_at.push(count);
-            }
-            count += 1;
-        }
-        codepoint_at.push(count);
-        let to_codepoint =
-            |byte: usize| -> usize { codepoint_at.get(byte).copied().unwrap_or(count) };
-        let path = |value: &str| match &root_real {
-            Some(root_real) => root_relative(root_real, value),
-            None => value.to_string(),
-        };
-
-        let mut out = Vec::with_capacity(warnings.len());
-        for (index, warning) in warnings.into_iter().enumerate() {
-            let own = index < own_count;
-            let dict = PyDict::new(py);
-            dict.set_item("line", warning.line)?;
-            dict.set_item("column", warning.column)?;
-            dict.set_item("rule", warning.rule)?;
-            dict.set_item("message", warning.message)?;
-            dict.set_item("start", own.then(|| to_codepoint(warning.start)))?;
-            dict.set_item("end", own.then(|| to_codepoint(warning.end)))?;
-            dict.set_item("file", warning.file.as_deref().map(path))?;
-            let chain = pyo3::types::PyList::empty(py);
-            for site in &warning.included_by {
-                let item = PyDict::new(py);
-                item.set_item("file", path(&site.file))?;
-                item.set_item("line", site.line)?;
-                item.set_item("column", site.column)?;
-                chain.append(item)?;
-            }
-            dict.set_item("includedBy", chain)?;
-            out.push(dict.unbind());
-        }
-        Ok(out)
-    })
-}
-
-/// Which renderer `render_with_includes` runs over the expanded document.
-///
-/// `carve` is deliberately absent: spec I15 excludes the Carve writer from
-/// expansion, because inlining a child into the formatter's output rewrites
-/// the author's document instead of formatting it.
-#[derive(Clone, Copy, PartialEq)]
-enum IncludeTarget {
-    Html,
-    Markdown,
-    Plain,
-    Ansi,
-}
-
-fn parse_include_target(name: &str) -> PyResult<IncludeTarget> {
-    match name {
-        "html" => Ok(IncludeTarget::Html),
-        "markdown" => Ok(IncludeTarget::Markdown),
-        "plain" => Ok(IncludeTarget::Plain),
-        "ansi" => Ok(IncludeTarget::Ansi),
-        other => Err(PyValueError::new_err(format!(
-            "unknown carve render target: {other:?} (supported: \"html\", \"markdown\", \"plain\", \"ansi\")"
-        ))),
-    }
-}
-
-/// An include identity as the caller should see it: relative to the
-/// containment root.
-///
-/// The resolver's ids are canonical absolute paths, and they reach a reader
-/// through warnings and dependencies alike. A build that prints them puts the
-/// machine's directory layout on a public page, so the root - which the caller
-/// supplied and already knows - is stripped back off. A path that is not under
-/// the root is the directive's own text (an unresolved target is reported as
-/// written), so it passes through.
-///
-/// Separated with `/` on every platform. A directive is written with `/`, and a
-/// host matches these against its own page paths, which are `/`-separated in
-/// MkDocs and Jekyll alike; a Windows build reporting `chapters\one.crv` would
-/// make the same document answer differently there.
-fn root_relative(root_real: &std::path::Path, id: &str) -> String {
-    match std::path::Path::new(id).strip_prefix(root_real) {
-        Ok(rest) => rest
-            .components()
-            .map(|part| part.as_os_str().to_string_lossy())
-            .collect::<Vec<_>>()
-            .join("/"),
-        Err(_) => id.to_string(),
-    }
-}
-
-/// Render Carve source with `{{ path }}` includes expanded from disk.
-///
-/// `include_root` is the containment root: no include resolves outside it, and
-/// it must be an ABSOLUTE path. A relative spec names no root - every
-/// canonicalizer resolves one against the process working directory, which
-/// spec PART 9 section 19 forbids the root defaulting to - so it raises
-/// `ValueError`. Absolutize a relative directory yourself, where the decision
-/// stays visible.
-///
-/// `source_path` is the identity of the document in `source`: what a nested
-/// relative include resolves against, and the `file` reported on a warning
-/// raised in the root document. Absolute, or relative to `include_root`.
-///
-/// Returns a dict:
-///
-///   - `output` the rendered document, in `target`
-///   - `warnings` list of `{rule, message, file}`, `file` root-relative
-///   - `suppressed_warnings` warnings raised past the cap, so a capped report
-///     is never read as a clean one
-///   - `dependencies` list of `{id, resolved, denial}`, every target touched
-///     including the refused ones, in first-encounter order. `id` is
-///     root-relative, `resolved` says the source WAS READ and not that it was
-///     merged, and `denial` is the refusal class or `None`.
-///
-/// The string entry points (`to_html` and friends) have no root and expand
-/// nothing; a directive stays literal there.
-#[pyfunction]
-#[pyo3(signature = (source, include_root, target = "html", extensions = None, mode = "interactive", renderers = None, symbols = None, safe = false, profile = None, *, source_path = None, allow_absolute = false, max_file_bytes = None, max_depth = None, max_bytes = None, max_resolver_calls = None, max_warnings = None, extension_options = None, lowercase_heading_ids = None, positions = None, sections = None, source_lines = None, mention_url = None, tag_url = None, profile_base_host = None))]
-#[allow(clippy::too_many_arguments)]
-fn render_with_includes(
-    py: Python<'_>,
-    source: Source,
-    include_root: &str,
-    target: &str,
-    extensions: Option<Vec<String>>,
-    mode: &str,
-    renderers: Option<Bound<'_, PyDict>>,
-    symbols: Option<Bound<'_, PyDict>>,
-    safe: bool,
-    profile: Option<&str>,
-    source_path: Option<String>,
-    allow_absolute: bool,
-    max_file_bytes: Option<u64>,
-    max_depth: Option<usize>,
-    max_bytes: Option<usize>,
-    max_resolver_calls: Option<usize>,
-    max_warnings: Option<usize>,
-    extension_options: Option<Bound<'_, PyDict>>,
-    lowercase_heading_ids: Option<bool>,
-    positions: Option<bool>,
-    sections: Option<bool>,
-    source_lines: Option<bool>,
-    mention_url: Option<String>,
-    tag_url: Option<String>,
-    profile_base_host: Option<String>,
-) -> PyResult<Py<PyDict>> {
-    guard(move || {
-        let source = source.0;
-        let source = source.as_str();
-        let which = parse_include_target(target)?;
-        let (parsed_mode, static_renderers) = resolve_mode_and_renderers(mode, renderers.as_ref())?;
-        let symbol_pairs = match symbols.as_ref() {
-            Some(dict) => build_symbols(dict)?,
-            None => Vec::new(),
-        };
-        let engine_options = EngineOptions {
-            lowercase_heading_ids,
-            positions,
-            sections,
-            source_lines,
-            mention_url,
-            tag_url,
-            profile_base_host,
-        };
-
-        // `safe` implies no includes, as carve-rs `--safe` and carve-js/php do:
-        // no resolver, no file read, directives stay literal (carve-rs#2911).
-        if safe {
-            let names = extensions.unwrap_or_default();
-            return with_options(
-                &names,
-                extension_options.as_ref(),
-                parsed_mode,
-                static_renderers,
-                &symbol_pairs,
-                safe,
-                profile,
-                engine_options,
-                |options| {
-                    let output = match which {
-                        IncludeTarget::Html => carve_rs::try_to_html_with_options(source, options)
-                            .map_err(|e| e.to_string()),
-                        IncludeTarget::Markdown => {
-                            carve_rs::try_to_markdown_with_options(source, options)
-                                .map_err(|e| e.to_string())
-                        }
-                        IncludeTarget::Plain => {
-                            carve_rs::try_to_plain_text_with_options(source, options)
-                                .map_err(|e| e.to_string())
-                        }
-                        IncludeTarget::Ansi => carve_rs::try_to_ansi_with_options(source, options)
-                            .map_err(|e| e.to_string()),
-                    }
-                    .map_err(PyValueError::new_err)?;
-                    let out = PyDict::new(py);
-                    out.set_item("output", output)?;
-                    out.set_item("warnings", pyo3::types::PyList::empty(py))?;
-                    out.set_item("suppressed_warnings", 0)?;
-                    out.set_item("dependencies", pyo3::types::PyList::empty(py))?;
-                    Ok(out.unbind())
-                },
-            );
-        }
-
-        // The configured root reaches the resolver UNCHANGED. Absolutizing it here
-        // would be the one thing that disarms the refusal above: `include_root=".."`
-        // would canonicalize to the parent of whatever directory the build happens
-        // to run in, and containment would silently sit there.
-        let mut resolver = carve_rs::FileSystemResolver::new(include_root)
-            .map_err(|e| {
-                PyValueError::new_err(format!("cannot use include root {include_root:?}: {e}"))
-            })?
-            .allow_absolute(allow_absolute);
-        if let Some(bytes) = max_file_bytes {
-            resolver = resolver.with_max_file_bytes(Some(bytes));
-        }
-        // The resolver canonicalized this already; it is repeated here only to have
-        // the same prefix `root_relative` has to strip.
-        let root_real = std::fs::canonicalize(include_root)?;
-
-        let mut include_options = carve_rs::IncludeOptions::new().with_resolver(&resolver);
-        if let Some(path) = source_path {
-            include_options = include_options.with_source_path(path);
-        }
-        if let Some(depth) = max_depth {
-            include_options = include_options.with_max_depth(depth);
-        }
-        if let Some(bytes) = max_bytes {
-            include_options = include_options.with_max_bytes(bytes);
-        }
-        if let Some(calls) = max_resolver_calls {
-            include_options = include_options.with_max_resolver_calls(calls);
-        }
-        if let Some(warnings) = max_warnings {
-            include_options = include_options.with_max_warnings(warnings);
-        }
-
-        let names = extensions.unwrap_or_default();
-        with_options(
-            &names,
-            extension_options.as_ref(),
-            parsed_mode,
-            static_renderers,
-            &symbol_pairs,
-            safe,
-            profile,
-            engine_options,
-            |options| {
-                let target_is_html = which == IncludeTarget::Html;
-                let prepared = carve_rs::prepare_doc_with_includes(
-                    source,
-                    options,
-                    &include_options,
-                    // Every target but HTML is inherently static, so it renders
-                    // under the interactive mode the other renderers assume.
-                    if target_is_html {
-                        options.mode
-                    } else {
-                        Mode::Interactive
-                    },
-                    target_is_html,
-                )
-                .map_err(|e| PyValueError::new_err(e.to_string()))?;
-                let output = match which {
-                    IncludeTarget::Html => {
-                        carve_rs::render_html_with_options(&prepared.doc, options)
-                            .map_err(|e| e.to_string())
-                    }
-                    IncludeTarget::Markdown => {
-                        carve_rs::render_markdown_with_options(&prepared.doc, options)
-                            .map_err(|e| e.to_string())
-                    }
-                    IncludeTarget::Plain => {
-                        carve_rs::render_plain_text_with_options(&prepared.doc, options)
-                            .map_err(|e| e.to_string())
-                    }
-                    IncludeTarget::Ansi => {
-                        carve_rs::render_ansi_with_options(&prepared.doc, options)
-                            .map_err(|e| e.to_string())
-                    }
-                }
-                .map_err(PyValueError::new_err)?;
-
-                let warnings = pyo3::types::PyList::empty(py);
-                for warning in &prepared.warnings {
-                    let item = PyDict::new(py);
-                    item.set_item("rule", &warning.rule)?;
-                    item.set_item("message", &warning.message)?;
-                    item.set_item(
-                        "file",
-                        warning
-                            .file
-                            .as_deref()
-                            .map(|file| root_relative(&root_real, file)),
-                    )?;
-                    warnings.append(item)?;
-                }
-                let dependencies = pyo3::types::PyList::empty(py);
-                for dependency in &prepared.dependencies {
-                    let item = PyDict::new(py);
-                    item.set_item("id", root_relative(&root_real, &dependency.id))?;
-                    item.set_item("resolved", dependency.resolved)?;
-                    item.set_item("denial", dependency.denial.map(|denial| denial.as_str()))?;
-                    dependencies.append(item)?;
-                }
-
-                let out = PyDict::new(py);
-                out.set_item("output", output)?;
-                out.set_item("warnings", warnings)?;
-                out.set_item("suppressed_warnings", prepared.suppressed_warnings)?;
-                out.set_item("dependencies", dependencies)?;
-                Ok(out.unbind())
+    guard(|| {
+        let req = request(
+            py,
+            if diagnostics {
+                "parseWithDiagnostics"
+            } else {
+                "parse"
             },
+            Some(&source.0),
+            options,
+        )?;
+        req.set_item("positions", positions)?;
+        execute(py, &req)
+    })
+}
+
+#[pyfunction]
+#[pyo3(signature = (source, *, positions = true))]
+fn parse_json(py: Python<'_>, source: Source, positions: bool) -> PyResult<String> {
+    guard(|| {
+        let parsed = request(py, "parse", Some(&source.0), None)?;
+        parsed.set_item("positions", positions)?;
+        let parsed = execute(py, &parsed)?;
+        let tree = parsed
+            .bind(py)
+            .cast::<PyDict>()?
+            .get_item("tree")?
+            .ok_or_else(|| CarveError::new_err("parse result has no tree"))?;
+        let req = request(py, "encodeTree", None, None)?;
+        req.set_item("tree", tree)?;
+        let encoded = execute(py, &req)?;
+        encoded
+            .bind(py)
+            .cast::<PyDict>()?
+            .get_item("json")?
+            .ok_or_else(|| CarveError::new_err("encodeTree result has no json"))?
+            .extract()
+    })
+}
+
+#[pyfunction]
+#[pyo3(signature = (source, options = None))]
+fn lint(py: Python<'_>, source: Source, options: Option<Bound<'_, PyDict>>) -> PyResult<Py<PyAny>> {
+    guard(|| execute(py, &request(py, "lint", Some(&source.0), options)?))
+}
+
+#[pyfunction]
+#[pyo3(signature = (source, options = None))]
+fn fmt(py: Python<'_>, source: Source, options: Option<Bound<'_, PyDict>>) -> PyResult<Py<PyAny>> {
+    guard(|| {
+        execute(
+            py,
+            &request(py, "formatWithDiagnostics", Some(&source.0), options)?,
         )
     })
+}
+
+#[pyfunction]
+#[pyo3(signature = (source, source_format = "html", options = None))]
+fn import_document(
+    py: Python<'_>,
+    source: Source,
+    source_format: &str,
+    options: Option<Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    guard(|| {
+        if source_format != "html" {
+            return Err(CarveError::new_err(format!(
+                "{source_format} import is not a Carve 0.2 core format"
+            )));
+        }
+        let req = request(py, "importDocument", Some(&source.0), options)?;
+        req.set_item("from", source_format)?;
+        execute(py, &req)
+    })
+}
+
+#[pyfunction]
+#[pyo3(signature = (tree, target = "html", options = None))]
+fn write(
+    py: Python<'_>,
+    tree: Bound<'_, PyAny>,
+    target: &str,
+    options: Option<Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    guard(|| {
+        let req = request(py, "writeWithDiagnostics", None, options)?;
+        req.set_item("tree", tree)?;
+        req.set_item("target", target)?;
+        execute(py, &req)
+    })
+}
+
+#[pyfunction]
+#[pyo3(signature = (source, options = None, *, extensions = None, renderers = None))]
+fn to_html(
+    py: Python<'_>,
+    source: Source,
+    options: Option<Bound<'_, PyDict>>,
+    extensions: Option<Vec<String>>,
+    renderers: Option<Bound<'_, PyDict>>,
+) -> PyResult<String> {
+    guard(|| {
+        if extensions.as_ref().is_some_and(|names| !names.is_empty())
+            || renderers.as_ref().is_some_and(|items| !items.is_empty())
+        {
+            return Err(CarveError::new_err(
+                "extension registration and host renderers are not available yet (carve-rs issue 4329)",
+            ));
+        }
+        let result = execute(py, &request(py, "render", Some(&source.0), options)?)?;
+        result
+            .bind(py)
+            .cast::<PyDict>()?
+            .get_item("html")?
+            .ok_or_else(|| CarveError::new_err("render result has no html"))?
+            .extract()
+    })
+}
+
+#[pyfunction]
+#[pyo3(signature = (source, extensions, options = None))]
+fn to_html_with_extensions(
+    py: Python<'_>,
+    source: Source,
+    extensions: Vec<String>,
+    options: Option<Bound<'_, PyDict>>,
+) -> PyResult<String> {
+    guard(|| to_html(py, source, options, Some(extensions), None))
 }
 
 #[pyfunction]
 fn extensions() -> PyResult<Vec<String>> {
-    guard(move || Ok(supported()))
+    guard(|| {
+        // No extension is registered until the provisional host API is implemented.
+        Ok(Vec::new())
+    })
+}
+
+#[pyfunction]
+#[pyo3(signature = (source, options = None))]
+fn to_carve(
+    py: Python<'_>,
+    source: Source,
+    options: Option<Bound<'_, PyDict>>,
+) -> PyResult<String> {
+    guard(|| {
+        let result = execute(py, &request(py, "format", Some(&source.0), options)?)?;
+        result
+            .bind(py)
+            .cast::<PyDict>()?
+            .get_item("source")?
+            .ok_or_else(|| CarveError::new_err("format result has no source"))?
+            .extract()
+    })
+}
+
+fn write_source(py: Python<'_>, source: Source, target: &str) -> PyResult<String> {
+    let parsed = execute(py, &request(py, "parse", Some(&source.0), None)?)?;
+    let tree = parsed
+        .bind(py)
+        .cast::<PyDict>()?
+        .get_item("tree")?
+        .ok_or_else(|| CarveError::new_err("parse result has no tree"))?;
+    let req = request(py, "write", None, None)?;
+    req.set_item("tree", tree)?;
+    req.set_item("target", target)?;
+    let result = execute(py, &req)?;
+    result
+        .bind(py)
+        .cast::<PyDict>()?
+        .get_item("output")?
+        .ok_or_else(|| CarveError::new_err("write result has no output"))?
+        .extract()
+}
+
+#[pyfunction]
+fn to_markdown(py: Python<'_>, source: Source) -> PyResult<String> {
+    guard(|| write_source(py, source, "markdown"))
+}
+#[pyfunction]
+fn to_plain_text(py: Python<'_>, source: Source) -> PyResult<String> {
+    guard(|| write_source(py, source, "plain"))
+}
+#[pyfunction]
+fn to_ansi(py: Python<'_>, source: Source) -> PyResult<String> {
+    guard(|| write_source(py, source, "ansi"))
+}
+#[pyfunction]
+fn from_html(py: Python<'_>, source: Source) -> PyResult<Py<PyAny>> {
+    guard(|| {
+        let req = request(py, "importDocument", Some(&source.0), None)?;
+        req.set_item("from", "html")?;
+        execute(py, &req)
+    })
+}
+
+#[pyfunction]
+fn from_markdown(_source: Source) -> PyResult<Py<PyAny>> {
+    guard(|| {
+        Err(CarveError::new_err(
+            "Markdown import is not part of the Carve 0.2 core importer (C2-T-003)",
+        ))
+    })
+}
+
+#[pyfunction]
+fn _panic_probe() -> PyResult<String> {
+    guard(|| panic!("deliberate panic from the Carve extension panic probe"))
 }
 
 #[pymodule]
 fn carve(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     install_panic_hook();
+    m.add("CarveError", m.py().get_type::<CarveError>())?;
     m.add("EnginePanicError", m.py().get_type::<EnginePanicError>())?;
-    m.add(
-        "IncludeRegionError",
-        m.py().get_type::<IncludeRegionError>(),
-    )?;
+    m.add_function(wrap_pyfunction!(call, m)?)?;
+    m.add_function(wrap_pyfunction!(render, m)?)?;
+    m.add_function(wrap_pyfunction!(parse, m)?)?;
+    m.add_function(wrap_pyfunction!(parse_json, m)?)?;
+    m.add_function(wrap_pyfunction!(lint, m)?)?;
+    m.add_function(wrap_pyfunction!(fmt, m)?)?;
+    m.add_function(wrap_pyfunction!(import_document, m)?)?;
+    m.add_function(wrap_pyfunction!(write, m)?)?;
     m.add_function(wrap_pyfunction!(to_html, m)?)?;
     m.add_function(wrap_pyfunction!(to_html_with_extensions, m)?)?;
+    m.add_function(wrap_pyfunction!(extensions, m)?)?;
+    m.add_function(wrap_pyfunction!(to_carve, m)?)?;
     m.add_function(wrap_pyfunction!(to_markdown, m)?)?;
     m.add_function(wrap_pyfunction!(to_plain_text, m)?)?;
     m.add_function(wrap_pyfunction!(to_ansi, m)?)?;
-    m.add_function(wrap_pyfunction!(to_carve, m)?)?;
-    m.add_function(wrap_pyfunction!(render_ast_json, m)?)?;
     m.add_function(wrap_pyfunction!(from_html, m)?)?;
     m.add_function(wrap_pyfunction!(from_markdown, m)?)?;
-    m.add_function(wrap_pyfunction!(extensions, m)?)?;
-    m.add_function(wrap_pyfunction!(read_stamp, m)?)?;
-    m.add_function(wrap_pyfunction!(needs_review, m)?)?;
-    m.add_function(wrap_pyfunction!(parse, m)?)?;
-    m.add_function(wrap_pyfunction!(parse_json, m)?)?;
-    m.add_function(wrap_pyfunction!(decision_trace, m)?)?;
-    m.add_function(wrap_pyfunction!(lint, m)?)?;
-    m.add_function(wrap_pyfunction!(render_with_includes, m)?)?;
-    m.add_function(wrap_pyfunction!(select_include_region, m)?)?;
     m.add_function(wrap_pyfunction!(_panic_probe, m)?)?;
     Ok(())
 }

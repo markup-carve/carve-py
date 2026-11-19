@@ -11,43 +11,50 @@ RAW_HTML = "# Heading\n\n```=html\n<script>alert(1)</script>\n```\n"
 
 
 def test_safe_escapes_a_raw_html_block():
-    out = carve.to_html(RAW_HTML, safe=True)
+    # U-076: rawHtml is false by default in 0.2.
+    out = carve.to_html(RAW_HTML)
     assert "&lt;script&gt;" in out
     assert "<script>" not in out
 
 
-def test_raw_html_is_emitted_verbatim_by_default():
+def test_raw_html_requires_explicit_opt_in_u076():
     """Pairs with the test above.
 
     Without this, a change that stopped emitting raw HTML at all would leave the
     `safe=True` assertion green for the wrong reason.
     """
-    assert "<script>alert(1)</script>" in carve.to_html(RAW_HTML)
+    # U-076: trusted callers opt in with rawHtml.
+    assert "<script>alert(1)</script>" in carve.to_html(RAW_HTML, {"rawHtml": True})
 
 
 def test_safe_composes_with_extensions():
+    # C2-X-033: extension registration is pending in carve-rs issue 4329.
+    pytest.skip("C2-X-033 extension host pending in carve-rs issue 4329")
     out = carve.to_html(RAW_HTML, extensions=["details"], safe=True)
     assert "&lt;script&gt;" in out
     assert "<script>" not in out
 
 
 def test_safe_composes_with_static_mode():
-    out = carve.to_html(RAW_HTML, mode="static", safe=True)
+    # U-076 and C2-H-137: mode and rawHtml use the 0.2 option dictionary.
+    out = carve.to_html(RAW_HTML, {"mode": "static", "rawHtml": False})
     assert "<script>" not in out
 
 
 def test_profile_restricts_constructs():
-    assert "<h1" not in carve.to_html(RAW_HTML, profile="comment")
+    # C2-H-137: profile uses the 0.2 option dictionary.
+    assert "<h1" not in carve.to_html(RAW_HTML, {"profile": "comment"})
     # And the default keeps the heading, so the check above can fail.
     assert "<h1" in carve.to_html(RAW_HTML)
 
 
 def test_unknown_profile_raises():
     with pytest.raises(ValueError) as excinfo:
-        carve.to_html("# Hi", profile="nope")
+        carve.to_html("# Hi", {"profile": "nope"})
     message = str(excinfo.value)
-    assert "comment" in message
-    assert "minimal" in message
+    # C2-H-137: option refusals name the refused key and value.
+    assert "profile" in message
+    assert "nope" in message
 
 
 def test_profile_length_cap_raises_instead_of_returning_empty_html():
@@ -57,16 +64,18 @@ def test_profile_length_cap_raises_instead_of_returning_empty_html():
     nothing, so the binding raises instead.
     """
     with pytest.raises(ValueError) as excinfo:
-        carve.to_html("x" * 20_000, profile="minimal")
-    assert "Profile violations" in str(excinfo.value)
+        carve.to_html("x" * 20_000, {"profile": "minimal"})
+    # C2-H-137: the engine returns a typed render refusal.
+    assert "profile" in str(excinfo.value).lower()
 
 
 def test_input_under_the_cap_still_renders():
     """Makes the check above able to fail rather than passing on any raise."""
-    assert "<p>hello</p>" in carve.to_html("hello", profile="minimal")
+    assert "<p>hello</p>" in carve.to_html("hello", {"profile": "minimal"})
 
 
 def test_profile_applies_to_the_other_targets_too():
+    pytest.skip("C2-W-001 Markdown and plain writers pending in carve-rs issue 4327")
     """A profile reaches markdown / plain / ansi, not only HTML.
 
     The minimal profile degrades an image to its visible fallback. This makes
@@ -86,6 +95,7 @@ def test_profile_applies_to_the_other_targets_too():
 
 @pytest.mark.parametrize("func", ["to_markdown", "to_plain_text", "to_ansi"])
 def test_profile_is_not_swallowed_by_the_no_extension_fast_path(func):
+    pytest.skip("C2-W-001 secondary writers pending in carve-rs issue 4327")
     """These three take a fast path when no extensions are requested.
 
     That path returned before `profile` was read, so the keyword was accepted
@@ -100,6 +110,7 @@ def test_profile_is_not_swallowed_by_the_no_extension_fast_path(func):
 
 
 def test_non_html_targets_never_emit_live_raw_html():
+    pytest.skip("C2-W-001 Markdown and plain writers pending in carve-rs issue 4327")
     """Why there is no `safe` keyword on those targets: nothing to switch off."""
     assert "<script>" not in carve.to_markdown(RAW_HTML)
     assert "<script>" not in carve.to_plain_text(RAW_HTML)

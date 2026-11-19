@@ -27,13 +27,7 @@ crate-type = ["cdylib"]
 pyo3 = { version = "0.27", features = ["abi3-py38", "extension-module"] }
 
 # --- Carve engine dependency ---------------------------------------------
-# Renamed to `carve_rs` in Rust code (via `package = "carve-lang"`) so it does
-# not collide with our own `carve` #[pymodule]. The crate is published as
-# `carve-lang` (the name `carve` was taken on crates.io).
-#
-# scripts/pinned-spec-commit.py resolves the exact engine revision to its spec corpus.
-carve_rs = { package = "carve-lang", version = "=0.1.14" }
-#
-# For local development against a sibling checkout, swap the line above for a
-# path dependency:
-# carve_rs = { package = "carve-lang", path = "../carve-rs" }
+# The unreleased 0.2 crate lives in the Rust engine repository's v2 workspace
+# member. Cargo fetches that member from the exact next2 commit recorded here.
+# This does not publish an engine or a Python package.
+carve2 = { git = "https://github.com/markup-carve/carve-rs", rev = "dd5f0e7ac90856c220c6a6afdc6b56dba8817844", package = "carve2" }

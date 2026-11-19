@@ -8,6 +8,21 @@ therefore get an entry of their own.
 
 ## [Unreleased]
 
+### Breaking
+
+- Bind the Carve 0.2 engine on the `next2` branch through its public JSON API.
+  Render, parse, and lint now return 0.2 result records and accept 0.2 option
+  dictionaries. Raw HTML is disabled by default.
+- Preserve writer and import entry points with explicit availability errors
+  while the 0.2 engine ports those registrations. The extension host is also
+  pending.
+
+### Improvements
+
+- Expose typed 0.2 render, parse, lint, format, import, write, and generic call
+  functions. Pin the engine to one unreleased git commit for reproducible
+  wheels.
+
 ## [0.1.13] - 2026-11-12
 
 The Python binding moves to the published carve-rs 0.1.14 engine and the 0.1.14 spec: one attach rule for `+`, comment lines erased before layout, braced table alignment, and a canonical writer that writes `***` and native `|=` headers.

@@ -1,26 +1,27 @@
-# carve (Python binding)
+# carve-py on Carve 0.2
 
-Python bindings for the Carve Rust engine. Version 0.1.12 uses `carve-lang` engine 0.1.13 to process Carve 0.1 documents. See the [Carve documentation](https://markup-carve.github.io/carve/).
-
-## Install
+This `next2` branch binds the unreleased Carve 0.2 Rust engine to Python. It is
+not a package release. Build a wheel from this branch and its pinned engine git
+commit with Rust 1.85 or newer:
 
 ```sh
-pip install carve-lang
+python -m pip install maturin
+maturin build --release --out dist
+python -m pip install --find-links dist --force-reinstall carve-lang
 ```
-
-## Usage
 
 ```python
 import carve
-print(carve.to_html("# Hello *world*"))
+
+result = carve.render("# Hello *world*")
+print(result["html"])
+
+tree = carve.parse("# Hello")["tree"]
+print(carve.write(tree)["output"])
+
+diagnostics = carve.lint("# Hello")["diagnostics"]
 ```
 
-## Documentation
-
-- [Carve documentation](https://markup-carve.github.io/carve/)
-- [Guide](docs/guide.md)
-- [Documentation index](docs/README.md)
-
-## License
-
-[MIT](LICENSE).
+Options use the Carve 0.2 names in a dictionary. Raw HTML is disabled by
+default. See the [guide](docs/guide.md) for safe rendering, include roots,
+diagnostics, and pending writers and imports.

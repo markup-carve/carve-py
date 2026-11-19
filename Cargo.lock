@@ -24,6 +24,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da"
 
 [[package]]
+name = "bumpalo"
+version = "3.20.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87a0cf66fd1eb2fb7b822cb78370d82303750809bc6ba855f3f58e517d3238db"
+
+[[package]]
 name = "carve-lang"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -37,6 +43,20 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
+ "unicode-normalization",
+]
+
+[[package]]
+name = "carve2"
+version = "0.0.0"
+source = "git+https://github.com/markup-carve/carve-rs?rev=dd5f0e7ac90856c220c6a6afdc6b56dba8817844#dd5f0e7ac90856c220c6a6afdc6b56dba8817844"
+dependencies = [
+ "bumpalo",
+ "carve-lang",
+ "regex",
+ "serde",
+ "serde_json",
+ "typed-arena",
  "unicode-normalization",
 ]
 
@@ -320,7 +340,7 @@ dependencies = [
 name = "python-carve"
 version = "0.1.13"
 dependencies = [
- "carve-lang",
+ "carve2",
  "pyo3",
 ]
 
@@ -514,6 +534,12 @@ name = "tinyvec_macros"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
+
+[[package]]
+name = "typed-arena"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6af6ae20167a9ece4bcb41af5b80f8a1f1df981f6391189ce00fd257af04126a"
 
 [[package]]
 name = "unicase"
