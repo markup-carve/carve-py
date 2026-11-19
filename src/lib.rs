@@ -47,6 +47,23 @@ fn guard<T>(f: impl FnOnce() -> PyResult<T>) -> PyResult<T> {
     }
 }
 
+fn option_error(py: Python<'_>, message: impl Into<String>) -> PyErr {
+    let error = CarveError::new_err(message.into());
+    error
+        .value(py)
+        .setattr("name", "CarveOptionError")
+        .expect("CarveError metadata");
+    error
+        .value(py)
+        .setattr("category", "usage")
+        .expect("CarveError metadata");
+    error
+        .value(py)
+        .setattr("status", 2)
+        .expect("CarveError metadata");
+    error
+}
+
 /// Replace lone surrogates as the 0.1 binding did before entering Rust.
 struct Source(String);
 
@@ -125,7 +142,19 @@ fn execute(py: Python<'_>, req: &Bound<'_, PyDict>) -> PyResult<Py<PyAny>> {
 
 #[pyfunction]
 fn call(py: Python<'_>, request: Bound<'_, PyDict>) -> PyResult<Py<PyAny>> {
-    guard(|| execute(py, &request))
+    guard(|| {
+        let normalized = PyDict::new(py);
+        for (key, value) in request.iter() {
+            normalized.set_item(key, value)?;
+        }
+        if let Some(source) = normalized.get_item("source")? {
+            if source.is_instance_of::<PyString>() {
+                let text: Source = source.extract()?;
+                normalized.set_item("source", text.0)?;
+            }
+        }
+        execute(py, &normalized)
+    })
 }
 
 #[pyfunction]
@@ -229,9 +258,10 @@ fn import_document(
 ) -> PyResult<Py<PyAny>> {
     guard(|| {
         if source_format != "html" {
-            return Err(CarveError::new_err(format!(
-                "{source_format} import is not a Carve 0.2 core format"
-            )));
+            return Err(option_error(
+                py,
+                format!("{source_format} import is not a Carve 0.2 core format"),
+            ));
         }
         let req = request(py, "importDocument", Some(&source.0), options)?;
         req.set_item("from", source_format)?;
@@ -268,7 +298,7 @@ fn to_html(
         if extensions.as_ref().is_some_and(|names| !names.is_empty())
             || renderers.as_ref().is_some_and(|items| !items.is_empty())
         {
-            return Err(CarveError::new_err(
+            return Err(option_error(py,
                 "extension registration and host renderers are not available yet (carve-rs issue 4329)",
             ));
         }
@@ -360,9 +390,10 @@ fn from_html(py: Python<'_>, source: Source) -> PyResult<Py<PyAny>> {
 }
 
 #[pyfunction]
-fn from_markdown(_source: Source) -> PyResult<Py<PyAny>> {
+fn from_markdown(py: Python<'_>, _source: Source) -> PyResult<Py<PyAny>> {
     guard(|| {
-        Err(CarveError::new_err(
+        Err(option_error(
+            py,
             "Markdown import is not part of the Carve 0.2 core importer (C2-T-003)",
         ))
     })

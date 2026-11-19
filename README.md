@@ -7,7 +7,7 @@ commit with Rust 1.85 or newer:
 ```sh
 python -m pip install maturin
 maturin build --release --out dist
-python -m pip install --find-links dist --force-reinstall carve-lang
+python -m pip install dist/*.whl
 ```
 
 ```python

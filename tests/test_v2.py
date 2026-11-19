@@ -57,6 +57,12 @@ def test_parse_positions_and_surrogate_input():
     assert "pos" not in carve.parse("Hi", positions=False)["tree"]["children"][0]
 
 
+def test_generic_call_normalizes_lone_surrogates_without_mutating_request():
+    request = {"call": "render", "source": "A\ud800B"}
+    assert carve.call(request) == carve.render("A\ud800B")
+    assert request["source"] == "A\ud800B"
+
+
 def test_raw_html_and_url_security_defaults():
     source = "```=html\n<script>x</script>\n```"
     assert "<script>" not in carve.render(source)["html"]
