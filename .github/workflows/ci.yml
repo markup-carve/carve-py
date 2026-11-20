@@ -32,7 +32,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: markup-carve/carve
-          ref: 88eca15807b0e01a5468b5161de4818dd882a2cb
+          ref: 2bb688454ed5d84dbd80c1e9417a271174f054e3
           path: spec-02
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-python@v7
