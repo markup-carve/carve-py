@@ -10,6 +10,7 @@ therefore get an entry of their own.
 
 ### Breaking
 
+- Building the 0.2 binding now requires Rust 1.88 or newer, matching its pinned engine (markup-carve/carve-rs#4444).
 - Bind the Carve 0.2 engine on the `next2` branch through its public JSON API.
   Render, parse, and lint now return 0.2 result records and accept 0.2 option
   dictionaries. Raw HTML is disabled by default.

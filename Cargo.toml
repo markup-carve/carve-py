@@ -2,6 +2,7 @@
 name = "python-carve"
 version = "0.1.13"
 edition = "2021"
+rust-version = "1.88"
 description = "Python bindings (PyO3) for the Carve markup language, over the carve-rs engine."
 license = "MIT"
 repository = "https://github.com/markup-carve/carve-py"
@@ -31,6 +32,6 @@ pyo3 = { version = "0.27", features = ["abi3-py38", "extension-module"] }
 # Rust engine repository's next2 branch, fetched from the exact commit here.
 # src/lib.rs names it `::carve` because this extension module is also `carve`.
 # This does not publish an engine or a Python package.
-carve = { git = "https://github.com/markup-carve/carve-rs", rev = "e757891ff1613d046bb693d78286ce44dbc566b4", package = "carve-lang" }
+carve = { git = "https://github.com/markup-carve/carve-rs", rev = "e2aaf1d212efecb2940703a59055a54c2e28f591", package = "carve-lang" }
 
 serde_json = "1"
