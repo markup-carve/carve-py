@@ -47,7 +47,7 @@ def test_wiki_options_change_the_standard_renderer():
 
 
 @pytest.mark.parametrize("name,options,source,visible", [
-    ("carve.mathBlock", {"language": "tex"}, "```tex\nx\n```\n", '<div class="math display">'),
+    ("carve.mathBlock", {"language": "tex"}, "```tex\nx\n```\n", '<div class="math display" role="math">'),
     ("carve.codeGroup", {"idPrefix": "panels"}, "::: code-group\n```js [NPM]\nnpm i\n```\n:::\n", 'id="panels-1-tab-1"'),
     ("carve.colorSwatch", {"shape": "round"}, ":color[#123456]\n", "swatch-chip-round"),
     ("carve.references", {"mode": "author-date"}, "See :cite[doe].\n\n::: references\n:: doe\n: Doe (2020).\n:::\n", '<ul class="references">'),

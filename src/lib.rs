@@ -308,6 +308,15 @@ fn write(
 
 /// The standard extensions the engine enables over the JSON boundary (C2-X-039).
 const STANDARD_EXTENSIONS: &[&str] = &[
+    "carve.autolink",
+    "carve.externalLinks",
+    "carve.headingLevelShift",
+    "carve.headingNumbers",
+    "carve.headingPermalinks",
+    "carve.headingReference",
+    "carve.linkPolicy",
+    "carve.toc",
+    "carve.tocPlacement",
     "carve.cite",
     "carve.codeCallouts",
     "carve.codeGroup",

@@ -113,9 +113,8 @@ This host path reads the 0.2 render options, including `mode`, `profile`, `symbo
 `carve.to_markdown`, `carve.to_plain_text`, and `carve.to_ansi` use the
 pinned engine's export writers. The 0.1 math block, list table, diagram,
 glossary, details and other bundled extensions are standard extensions of the
-0.2 engine; `carve.extensions()` lists their names. The 0.1 navigation
-extensions (heading numbers and permalinks, table of contents, external links,
-autolink) are not in the Rust 0.2 engine yet (markup-carve/carve-rs#4476).
+0.2 engine; `carve.extensions()` lists their names. The 0.2 engine provides the navigation extensions, including heading numbers,
+permalinks, table of contents, external links, and autolink.
 Host transforms and renderers can claim and render other source constructs.
 
 The 0.1 Markdown importer, stamps, decision trace, source patch tools, and
