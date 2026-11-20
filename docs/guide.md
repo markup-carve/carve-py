@@ -85,6 +85,21 @@ carve.to_html(source, extensions=["carve.tabs"], renderers={"carve.tabs": "stand
 carve.render(source, {"extensions": ["carve.wiki"]})
 ```
 
+To configure a bundled extension, put its name and options in one entry. Plain
+names and configured entries can share the list. Unknown option names and
+incorrect value types raise `carve.CarveError` with `name` set to
+`CarveOptionError`.
+
+```python
+carve.render('"Hallo"', {
+    "extensions": [{"name": "carve.smartQuotes", "options": {"locale": "de"}}]
+})["html"]  # <p>„Hallo“</p>
+
+carve.to_html(":wiki[Guide]", extensions=[
+    {"name": "carve.wiki", "options": {"css_class": "docs", "new_window": True}}
+], renderers={"carve.wiki": "standard"})
+```
+
 `renderers` also accepts Python callables through the native host. A callable
 handles both channels; a dictionary with `interactive` and `static` keys selects
 channels separately. Use `carve.render_with_host(source, tree=tree, renderers=...,

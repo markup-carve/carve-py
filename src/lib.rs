@@ -2,6 +2,7 @@
 
 mod host;
 mod host_options;
+mod standard_options;
 
 use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
@@ -169,6 +170,23 @@ fn render(
     diagnostics: bool,
 ) -> PyResult<Py<PyAny>> {
     guard(|| {
+        if options
+            .as_ref()
+            .is_some_and(host::has_configured_extensions)
+        {
+            let rendered = host::render_host(py, &source.0, None, options.as_ref(), None, None)?;
+            if diagnostics {
+                return Ok(rendered);
+            }
+            let result = PyDict::new(py);
+            let html = rendered
+                .bind(py)
+                .cast::<PyDict>()?
+                .get_item("html")?
+                .ok_or_else(|| CarveError::new_err("render result has no html"))?;
+            result.set_item("html", html)?;
+            return Ok(result.unbind().into_any());
+        }
         execute(
             py,
             &request(
@@ -348,7 +366,7 @@ fn to_html(
     py: Python<'_>,
     source: Source,
     options: Option<Bound<'_, PyDict>>,
-    extensions: Option<Vec<String>>,
+    extensions: Option<Bound<'_, PyList>>,
     renderers: Option<Bound<'_, PyDict>>,
     transforms: Option<Bound<'_, PyList>>,
 ) -> PyResult<String> {
@@ -374,7 +392,8 @@ fn to_html(
                 }
             }
         }
-        if transforms.as_ref().is_some_and(|items| !items.is_empty())
+        if host::has_configured_extensions(&merged)
+            || transforms.as_ref().is_some_and(|items| !items.is_empty())
             || renderers.as_ref().is_some_and(|items| {
                 items.iter().any(|(_, renderer)| {
                     renderer.is_callable() || renderer.is_instance_of::<PyDict>()
@@ -429,7 +448,7 @@ fn to_html(
 fn to_html_with_extensions(
     py: Python<'_>,
     source: Source,
-    extensions: Vec<String>,
+    extensions: Bound<'_, PyList>,
     options: Option<Bound<'_, PyDict>>,
 ) -> PyResult<String> {
     guard(|| to_html(py, source, options, Some(extensions), None, None))

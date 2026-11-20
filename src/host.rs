@@ -7,6 +7,20 @@ use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyDict, PyList, PyString};
 use serde_json::Value;
 
+pub(super) fn has_configured_extensions(options: &Bound<'_, PyDict>) -> bool {
+    options
+        .get_item("extensions")
+        .ok()
+        .flatten()
+        .and_then(|value| {
+            value
+                .cast::<PyList>()
+                .ok()
+                .map(|items| items.iter().any(|item| item.is_instance_of::<PyDict>()))
+        })
+        .unwrap_or(false)
+}
+
 fn engine_error(why: impl ToString) -> api::Error {
     api::Error::Option {
         option: "host".into(),
@@ -87,7 +101,44 @@ pub(super) fn render_host(
     };
     if let Some(options) = options {
         if let Some(standard) = options.get_item("extensions")? {
-            for name in standard.extract::<Vec<String>>()? {
+            let entries = standard
+                .cast::<PyList>()
+                .map_err(|_| super::option_error(py, "extensions must be a list"))?;
+            for entry in entries.iter() {
+                let (name, configured) = if let Ok(name) = entry.extract::<String>() {
+                    (name, None)
+                } else {
+                    let row = entry.cast::<PyDict>().map_err(|_| {
+                        super::option_error(
+                            py,
+                            "extension must be a name or an entry with name and options",
+                        )
+                    })?;
+                    for (key, _) in row.iter() {
+                        let key: String = key.extract()?;
+                        if key != "name" && key != "options" {
+                            return Err(super::option_error(
+                                py,
+                                format!("extension entry has unknown field {key}"),
+                            ));
+                        }
+                    }
+                    let name: String = row
+                        .get_item("name")?
+                        .ok_or_else(|| super::option_error(py, "extension entry needs name"))?
+                        .extract()?;
+                    let config = row.get_item("options")?.ok_or_else(|| {
+                        super::option_error(py, format!("extension {name} needs options"))
+                    })?;
+                    let config = json_value(&config)?;
+                    let config = config.as_object().cloned().ok_or_else(|| {
+                        super::option_error(
+                            py,
+                            format!("extension {name} options must be an object"),
+                        )
+                    })?;
+                    (name, Some(config))
+                };
                 let keyword = renderers.and_then(|items| items.get_item(&name).ok().flatten());
                 let option = options.get_item("renderers")?.and_then(|value| {
                     value
@@ -121,8 +172,13 @@ pub(super) fn render_host(
                 } else {
                     false
                 };
-                host.enable_standard(&name, selected)
-                    .map_err(|e| super::CarveError::new_err(e.to_string()))?;
+                if let Some(config) = configured.as_ref() {
+                    super::standard_options::register(&mut host, &name, config, selected)
+                        .map_err(|e| super::option_error(py, e))?;
+                } else {
+                    host.enable_standard(&name, selected)
+                        .map_err(|e| super::CarveError::new_err(e.to_string()))?;
+                }
                 if aria {
                     host.enable_standard_tabs_renderer("aria")
                         .map_err(|e| super::CarveError::new_err(e.to_string()))?;
