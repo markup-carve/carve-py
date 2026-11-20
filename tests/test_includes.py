@@ -12,6 +12,10 @@ import re
 import carve
 import pytest
 
+# C2-T-022 replaces the 0.1 include report shape. The 0.2 root and dependency
+# contract is tested through the JSON boundary in test_v2.
+pytestmark = pytest.mark.skip(reason="C2-T-022 0.1 include report contract retired; 0.2 include tests in test_v2")
+
 
 def write(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)

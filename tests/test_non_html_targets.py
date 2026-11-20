@@ -22,6 +22,7 @@ import re
 import carve
 import pytest
 
+
 from corpus_population import require_whole_corpus
 
 CORPUS = os.environ.get("CARVE_SPEC_CORPUS")

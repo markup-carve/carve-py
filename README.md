@@ -1,26 +1,43 @@
-# carve (Python binding)
+# carve-py on Carve 0.2
 
-Python bindings for the Carve Rust engine. Version 0.1.12 uses `carve-lang` engine 0.1.13 to process Carve 0.1 documents. See the [Carve documentation](https://markup-carve.github.io/carve/).
-
-## Install
+This `next2` branch binds the unreleased Carve 0.2 Rust engine to Python. It is
+not a package release. Build a wheel from this branch and its pinned engine git
+commit with Rust 1.88 or newer:
 
 ```sh
-pip install carve-lang
+python -m pip install maturin
+maturin build --release --out dist
+python -m pip install dist/*.whl
 ```
-
-## Usage
 
 ```python
 import carve
-print(carve.to_html("# Hello *world*"))
+
+result = carve.render("# Hello *world*")
+print(result["html"])
+
+tree = carve.parse("# Hello")["tree"]
+print(carve.write(tree)["output"])
+
+diagnostics = carve.lint("# Hello")["diagnostics"]
 ```
 
-## Documentation
+Options use the Carve 0.2 names in a dictionary. Raw HTML is disabled by
+default. See the [guide](docs/guide.md) for safe rendering, include roots,
+diagnostics, formatting, HTML import, standard extensions, and available export writers.
 
-- [Carve documentation](https://markup-carve.github.io/carve/)
-- [Guide](docs/guide.md)
-- [Documentation index](docs/README.md)
+## Native extension callbacks
 
-## License
+A Python callable can render a declared 0.2 extension node. Use a callable for both modes, or a dictionary with `interactive` and `static` callables to select each channel. Each renderer receives a JSON-shaped node and returns trusted HTML. Ordered transforms receive a JSON-shaped resolved document and return the edited document.
 
-[MIT](LICENSE).
+```python
+import carve
+
+result = carve.render_with_host(
+    "# Guide",
+    transforms=[lambda tree: tree],
+)
+print(result["html"])
+```
+
+Pass `tree=` to `render_with_host` for an already declared extension tree. A callback exception or non-string renderer result produces the engine's `extension-renderer-failed` diagnostic and writes the fallback. A failed transform produces `extension-transform-failed` and keeps the prior view.

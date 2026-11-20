@@ -1,6 +1,9 @@
 """Task states exposed by the 0.1.13 engine."""
 
 import carve
+import pytest
+
+pytestmark = pytest.mark.skip(reason="0.1 engine readings; 0.2 examples run in test_v2_conformance")
 
 
 def test_task_states_render_and_preserve_markers():

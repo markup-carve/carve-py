@@ -1,468 +1,75 @@
-"""Type stubs for the `carve` native binding (PyO3 over carve-rs)."""
+"""Typed Carve 0.2 Python API over the Rust JSON boundary."""
 
-from typing import Any, Callable, Dict, List, Literal, Optional, TypedDict, Union
+from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
 
 __version__: str
 
-class EnginePanicError(Exception):
-    """Raised when the Carve engine panics.
+class EnginePanicError(Exception): ...
+class CarveError(ValueError):
+    name: str
+    category: str
+    status: int
 
-    The message carries the panic text and its location in the engine source.
-    The document is not renderable; the interpreter is unaffected.
-    """
+class Range(TypedDict):
+    startOffset: int
+    endOffset: int
 
-def to_carve(source: str, *, strict: bool = False, align_tables: bool = False) -> str:
-    """Format Carve source into canonical Carve.
-
-    With `strict`, a writer refusal raises `ValueError` instead of coming back
-    as the source as authored. `align_tables` pads table cells into aligned
-    columns.
-    """
-    ...
-
-class IncludeRegionError(ValueError):
-    """The selected include region is missing, or a marker is malformed or unpaired."""
-
-    rule: str
-
-def select_include_region(
-    source: str, name: str, mode: Literal["carve", "code"]
-) -> tuple[int, int]:
-    """Resolve `@region:name` with the engine's marker rules.
-
-    Returns the 1-based, inclusive `(start, end)` content lines; an empty
-    region has `end == start - 1`. `mode="carve"` only accepts `%% #region`
-    markers, `mode="code"` also the source-comment forms. Raises
-    `IncludeRegionError` with `rule == "include-region-invalid"`.
-    """
-    ...
-
-def _panic_probe() -> str:
-    """Panic on purpose inside the extension; used only by the panic test."""
-    ...
-
-def render_ast_json(source: str) -> str:
-    """Validate AST JSON and write canonical source; reject unspellable trees."""
-    ...
-
-class MigrationDiagnostic(TypedDict, total=False):
-    fidelity: str
-    confidence: str
+class Diagnostic(TypedDict, total=False):
     code: str
-    message: str
     severity: str
-    path: str
-
-class MigrationReport(TypedDict, total=False):
-    schema_version: int
-    mode: str
-    adapter: str
-    source_format: str
-    diagnostics: List[MigrationDiagnostic]
-
-class MigrationResult(TypedDict):
-    value: str
-    report: MigrationReport
-
-def from_html(source: str, mode: str = "safe") -> MigrationResult:
-    """Import HTML into canonical Carve and return its loss report."""
-    ...
-
-def from_markdown(source: str) -> MigrationResult:
-    """Import Markdown into canonical Carve and return its loss report."""
-    ...
-
-# A static-render callable. Diagram renderers (mermaid, chart, plantuml,
-# graphviz, d2, wavedrom, vega-lite, abc), keyed by fence css class, take the
-# construct source and return HTML: ``(str) -> str``. The math renderer takes
-# the TeX source and a ``display`` flag (``True`` for block/display math,
-# ``False`` for inline) and returns HTML: ``(str, bool) -> str``.
-Renderer = Union[Callable[[str], str], Callable[[str, bool], str]]
-ExtensionOptions = Dict[str, Dict[str, Any]]
-
-def to_html(
-    source: str,
-    extensions: Optional[List[str]] = None,
-    mode: str = "interactive",
-    renderers: Optional[Dict[str, Renderer]] = None,
-    symbols: Optional[Dict[str, str]] = None,
-    safe: bool = False,
-    profile: Optional[str] = None,
-    *,
-    extension_options: Optional[ExtensionOptions] = None,
-    lowercase_heading_ids: Optional[bool] = None,
-    positions: Optional[bool] = None,
-    sections: Optional[bool] = None,
-    source_lines: Optional[bool] = None,
-    mention_url: Optional[str] = None,
-    tag_url: Optional[str] = None,
-    profile_base_host: Optional[str] = None,
-) -> str:
-    """Convert Carve source to HTML.
-
-    With no ``extensions`` (or an empty list) this is the core renderer,
-    identical to carve-rs ``to_html``. Pass extension names to enable opt-in
-    behavior. Raises ``ValueError`` for an unknown extension name.
-
-    ``mode`` is ``"interactive"`` (default) or ``"static"``; any other value
-    raises ``ValueError``. Static mode flattens interactive constructs to
-    self-contained HTML (no client scripts).
-
-    ``renderers`` is an optional dict of build-time renderer callables consulted
-    only on the static HTML path. Keys are a diagram fence css class
-    (``"mermaid"``, ``"chart"``, ``"plantuml"``, ``"graphviz"``, ``"d2"``,
-    ``"wavedrom"``, ``"vega-lite"``, ``"abc"``; callables ``(str) -> str``) or
-    ``"math"`` (callable ``(str, bool) -> str``). An unknown key raises
-    ``ValueError``. A missing renderer degrades that
-    construct to its source (never blank). A renderer that raises or returns a
-    non-string also degrades to source.
-
-    ``symbols`` is an optional ``{name: value}`` map for ``:name:`` symbols. A
-    mapped name renders its value; an unmapped ``:name:`` stays literal, and the
-    leading word-boundary guard still holds (``a:b:c``, ``10:30:``,
-    ``me@example.com`` never become symbols). Non-string keys/values raise
-    ``TypeError``.
-
-    .. warning::
-       A mapped symbol value is inserted as **TRUSTED RAW output in the target
-       format** - it is NOT escaped, the same trust class as ``renderers``. So
-       ``symbols={"b": "<b>x</b>"}`` emits a real ``<b>`` element. This is
-       deliberate: processor configuration is trusted. **Never build a symbols
-       map out of untrusted / user-supplied input.**
-
-    ``safe`` escapes ``=html`` raw blocks and spans instead of emitting them.
-    Carve's normative hardening is always on and needs no argument (URL scheme
-    denylist, event-handler attributes, the Trojan-Source bidi characters); raw
-    passthrough is the deliberate exception, so it is the one thing untrusted
-    input has to switch off. It applies to HTML only, the one target that can
-    emit live markup.
-
-    ``profile`` restricts which constructs are allowed at all and caps input
-    length: ``"full"``, ``"article"``, ``"comment"``, ``"minimal"``, or ``None``
-    for no profile. An unknown name raises ``ValueError``, and so does a
-    profile REJECTION - input past the profile's max length, or a denied
-    construct when the action is error. It is an exception rather than a return
-    value because the engine's infallible entry point answers a rejection with
-    an empty string, which a caller cannot tell from a document that
-    legitimately rendered to nothing.
-    """
-    ...
-
-def to_html_with_extensions(
-    source: str,
-    extensions: List[str],
-    mode: str = "interactive",
-    renderers: Optional[Dict[str, Renderer]] = None,
-    symbols: Optional[Dict[str, str]] = None,
-    safe: bool = False,
-    profile: Optional[str] = None,
-    *,
-    extension_options: Optional[ExtensionOptions] = None,
-    lowercase_heading_ids: Optional[bool] = None,
-    positions: Optional[bool] = None,
-    sections: Optional[bool] = None,
-    source_lines: Optional[bool] = None,
-    mention_url: Optional[str] = None,
-    tag_url: Optional[str] = None,
-    profile_base_host: Optional[str] = None,
-) -> str:
-    """Convert Carve source to HTML with an explicit extension list.
-
-    Supports the same ``mode`` / ``renderers`` / ``symbols`` / ``safe`` /
-    ``profile`` keywords as :func:`to_html` (including the trusted-raw contract
-    on symbol values).
-    """
-    ...
-
-def to_markdown(
-    source: str,
-    extensions: Optional[List[str]] = None,
-    profile: Optional[str] = None,
-    *,
-    extension_options: Optional[ExtensionOptions] = None,
-    lowercase_heading_ids: Optional[bool] = None,
-    positions: Optional[bool] = None,
-    sections: Optional[bool] = None,
-    source_lines: Optional[bool] = None,
-    mention_url: Optional[str] = None,
-    tag_url: Optional[str] = None,
-    profile_base_host: Optional[str] = None,
-) -> str:
-    """Convert Carve source to Markdown (inherently static; no ``mode``).
-
-    ``profile`` behaves as in :func:`to_html`. There is no ``safe`` keyword:
-    this target escapes raw HTML unconditionally, so it can never emit live
-    markup and has nothing to switch off.
-
-    The engine keywords of :func:`to_html` are accepted here too. Most of them
-    describe HTML markup and have no effect on this target;
-    ``lowercase_heading_ids`` does, because the renderer resolves ``</#id>``
-    crossrefs through the same heading index the HTML renderer uses.
-    """
-    ...
-
-def to_plain_text(
-    source: str,
-    extensions: Optional[List[str]] = None,
-    profile: Optional[str] = None,
-    *,
-    extension_options: Optional[ExtensionOptions] = None,
-    lowercase_heading_ids: Optional[bool] = None,
-    positions: Optional[bool] = None,
-    sections: Optional[bool] = None,
-    source_lines: Optional[bool] = None,
-    mention_url: Optional[str] = None,
-    tag_url: Optional[str] = None,
-    profile_base_host: Optional[str] = None,
-) -> str:
-    """Convert Carve source to plain text (inherently static; no ``mode``).
-
-    ``profile`` behaves as in :func:`to_html`; there is no ``safe`` keyword (see
-    :func:`to_markdown`).
-
-    The engine keywords of :func:`to_html` are accepted here too. Most of them
-    describe HTML markup and have no effect on this target;
-    ``lowercase_heading_ids`` does, because the renderer resolves ``</#id>``
-    crossrefs through the same heading index the HTML renderer uses.
-    """
-    ...
-
-def to_ansi(
-    source: str,
-    extensions: Optional[List[str]] = None,
-    profile: Optional[str] = None,
-    *,
-    extension_options: Optional[ExtensionOptions] = None,
-    lowercase_heading_ids: Optional[bool] = None,
-    positions: Optional[bool] = None,
-    sections: Optional[bool] = None,
-    source_lines: Optional[bool] = None,
-    mention_url: Optional[str] = None,
-    tag_url: Optional[str] = None,
-    profile_base_host: Optional[str] = None,
-) -> str:
-    """Convert Carve source to ANSI-colored text (inherently static; no ``mode``).
-
-    ``profile`` behaves as in :func:`to_html`; there is no ``safe`` keyword (see
-    :func:`to_markdown`).
-
-    The engine keywords of :func:`to_html` are accepted here too. Most of them
-    describe HTML markup and have no effect on this target;
-    ``lowercase_heading_ids`` does, because the renderer resolves ``</#id>``
-    crossrefs through the same heading index the HTML renderer uses.
-    """
-    ...
-
-def read_stamp(source: str) -> Optional[Dict[str, Optional[str]]]:
-    """Read a document's provenance marker, as written by ``carve fmt --stamp``.
-
-    Returns ``{"version": ..., "generated_by": ...}``, or ``None`` when the
-    document carries no marker - the normal case for a hand-written document,
-    meaning "unknown" rather than "current". ``generated_by`` is ``None`` when
-    the marker records no writer.
-
-    Both documented forms are read (the trailing ``%%`` line and the ``%%%``
-    block), and a marker written by any Carve engine reads the same.
-    """
-    ...
-
-def needs_review(source: str, current_version: Optional[str] = None) -> bool:
-    """Whether a document predates the spec version this engine targets.
-
-    An **unstamped** document answers ``True``: its provenance is unknown, and
-    assuming it is current is the unsafe direction. Pass ``current_version`` to
-    compare against something other than this engine's spec version.
-
-    See https://markup-carve.github.io/carve/versioning for what a version
-    difference means for a stored document.
-    """
-    ...
-
-def parse(
-    source: str,
-    *,
-    lowercase_heading_ids: Optional[bool] = None,
-    positions: Optional[bool] = None,
-    sections: Optional[bool] = None,
-    source_lines: Optional[bool] = None,
-    mention_url: Optional[str] = None,
-    tag_url: Optional[str] = None,
-    profile_base_host: Optional[str] = None,
-) -> Dict[str, Any]:
-    """Parse Carve source and return its AST as Python data.
-
-    The PART 12 exchange shape - the same tree every Carve engine publishes, so
-    a consumer written against one implementation reads another's output. The
-    root carries exactly ``type``, ``children`` and ``srcByteLength``;
-    frontmatter and footnote definitions are block nodes inside ``children``.
-
-    Every node except the root carries ``pos`` when the engine could place it; pass
-    ``positions=False`` to leave the spans out:
-    1-based lines and columns, 0-based offsets, ends exclusive, counted in
-    Unicode **codepoints**. A node the engine could not place - reassembled
-    text, a synthesized node - has no ``pos`` at all rather than an invented
-    one.
-
-    See https://markup-carve.github.io/carve/ast-json and its JSON Schema.
-    """
-    ...
-
-def parse_json(
-    source: str,
-    *,
-    lowercase_heading_ids: Optional[bool] = None,
-    positions: Optional[bool] = None,
-    sections: Optional[bool] = None,
-    source_lines: Optional[bool] = None,
-    mention_url: Optional[str] = None,
-    tag_url: Optional[str] = None,
-    profile_base_host: Optional[str] = None,
-) -> str:
-    """The same tree as :func:`parse`, as a JSON string.
-
-    For a caller that stores or forwards the bytes rather than walking the tree,
-    and so does not need the round trip through Python objects.
-    """
-    ...
-
-def lint(
-    source: str,
-    extensions: Optional[List[str]] = None,
-    *,
-    include_root: Optional[str] = None,
-    source_path: Optional[str] = None,
-    allow_absolute: bool = False,
-    max_file_bytes: Optional[int] = None,
-    max_depth: Optional[int] = None,
-    max_bytes: Optional[int] = None,
-    max_resolver_calls: Optional[int] = None,
-    max_warnings: Optional[int] = None,
-    caption_hints: bool = False,
-) -> List[Dict[str, Any]]:
-    """Report constructs that parse and render, but not the way the author meant.
-
-    The defect class this catches is the silent one: the document parses, the
-    renderer emits something, and what the author wrote never reaches the page.
-    An unattached block attribute is the clearest case - ``{#id .cls}`` above a
-    blank line attaches to nothing, so the id and the class simply vanish, and
-    nothing says so.
-
-    Each warning is a dict with:
-
-    ``line``, ``column``
-        1-based, for reporting.
-    ``rule``
-        A stable id such as ``"unattached-block-attribute"``, shared with
-        carve-js and carve-php: the same trigger reports the same id in every
-        engine.
-    ``message``
-        What degrades, in prose.
-    ``start``, ``end``
-        CODEPOINT offsets into ``source``, 0-based, end exclusive - so
-        ``source[warning["start"]:warning["end"]]`` is the offending text.
-        The Rust API reports these as BYTE offsets, which would mis-slice
-        every document carrying one non-ASCII character before a warning;
-        the unit follows the host language, and Python's is the codepoint.
-
-    ``file``, ``includedBy``
-        ``None`` and ``[]`` for a finding in ``source`` itself.
-
-    ``extensions`` selects the rules, as for rendering. With ``include_root``
-    (and optionally ``source_path``, as for ``render_with_includes``) the pass
-    also lints every included Carve file and reports include directives that
-    stay literal, such as ``include-unresolved`` or ``include-non-text``. Those
-    findings name their root-relative ``file`` and the ``includedBy`` chain of
-    ``{file, line, column}`` sites, top-level first; their ``start`` and
-    ``end`` are ``None``, since the offsets would index another text. The
-    include budgets are accepted as for rendering. ``caption_hints`` adds the
-    opt-in ``caption-looking-paragraph`` hint for a paragraph beside an image
-    or table that reads like a caption.
-    """
-    ...
-
-def decision_trace(source: str) -> str:
-    """The block decision trace as JSON lines.
-
-    The first line is the header
-    ``{"trace":"carve-decision-trace","version":1,"engine":"carve-rs"}``; each
-    following line records the ownership walk's decision for one source line.
-    """
-    ...
-
-class IncludeWarning(TypedDict):
-    rule: str
+    channel: str
     message: str
-    file: Optional[str]
+    path: str
+    range: Range
+    file: str
+    foreignType: str
 
-class IncludeDependency(TypedDict):
-    id: str
-    resolved: bool
-    denial: Optional[str]
+class RenderResult(TypedDict, total=False):
+    html: str
+    diagnostics: List[Diagnostic]
+    suppressedDiagnostics: int
 
-class IncludeResult(TypedDict):
+class ParseResult(TypedDict, total=False):
+    tree: Dict[str, Any]
+    diagnostics: List[Diagnostic]
+    suppressedDiagnostics: int
+
+class LintResult(TypedDict):
+    diagnostics: List[Diagnostic]
+
+class FormatResult(TypedDict):
+    source: str
+    diagnostics: List[Diagnostic]
+
+class WriteResult(TypedDict):
     output: str
-    warnings: List[IncludeWarning]
-    suppressed_warnings: int
-    dependencies: List[IncludeDependency]
+    diagnostics: List[Diagnostic]
 
-def render_with_includes(
-    source: str,
-    include_root: str,
-    target: str = "html",
-    extensions: Optional[List[str]] = None,
-    mode: str = "interactive",
-    renderers: Optional[Dict[str, Renderer]] = None,
-    symbols: Optional[Dict[str, str]] = None,
-    safe: bool = False,
-    profile: Optional[str] = None,
-    *,
-    source_path: Optional[str] = None,
-    allow_absolute: bool = False,
-    max_file_bytes: Optional[int] = None,
-    max_depth: Optional[int] = None,
-    max_bytes: Optional[int] = None,
-    max_resolver_calls: Optional[int] = None,
-    max_warnings: Optional[int] = None,
-    extension_options: Optional[ExtensionOptions] = None,
-    lowercase_heading_ids: Optional[bool] = None,
-    positions: Optional[bool] = None,
-    sections: Optional[bool] = None,
-    source_lines: Optional[bool] = None,
-    mention_url: Optional[str] = None,
-    tag_url: Optional[str] = None,
-    profile_base_host: Optional[str] = None,
-) -> IncludeResult:
-    """Render Carve source with ``{{ path }}`` includes expanded from disk.
+Options = Dict[str, Any]
+ExtensionEntry = Union[str, Dict[str, Any]]
 
-    ``include_root`` is the containment root: no include resolves outside it,
-    and it must be an **absolute** path. A relative value names no root - every
-    canonicalizer resolves one against the process working directory, which
-    PART 9 section 19 forbids the root defaulting to - so it raises
-    ``ValueError``. Absolutize it yourself if you need to, where you can see
-    the decision.
-
-    ``source_path`` is the identity of the document in ``source``: the chain a
-    nested relative include resolves against, and the ``file`` reported on a
-    warning raised in the root document. Absolute, or relative to
-    ``include_root``.
-
-    ``target`` is ``"html"`` (default), ``"markdown"``, ``"plain"`` or
-    ``"ansi"``. There is no ``"carve"``: spec I15 excludes the Carve writer,
-    because inlining a child into the formatter's output rewrites the author's
-    document rather than formatting it.
-
-    Paths in the result are relative to ``include_root``, so a report shown to
-    a reader carries no host directory layout.
-
-    ``safe=True`` turns includes off, as carve-rs ``--safe`` does: no file is
-    read, every directive stays literal, and ``warnings`` and ``dependencies``
-    are empty. The root is not opened, so it is not validated either.
-
-    The string entry points (:func:`to_html` and friends) have no root and
-    expand nothing - a directive stays literal there.
-    """
+def call(request: Dict[str, Any]) -> Dict[str, Any]:
+    """Run one public Carve 0.2 JSON call and return its successful result."""
     ...
 
+def render(source: str, options: Optional[Options] = None, *, diagnostics: bool = False) -> RenderResult: ...
+def parse(source: str, options: Optional[Options] = None, *, diagnostics: bool = False, positions: bool = True) -> ParseResult: ...
+def parse_json(source: str, *, positions: bool = True) -> str: ...
+def lint(source: str, options: Optional[Options] = None) -> LintResult: ...
+def fmt(source: str, options: Optional[Options] = None) -> FormatResult: ...
+def import_document(source: str, source_format: str = "html", options: Optional[Options] = None) -> Dict[str, Any]: ...
+def write(tree: Dict[str, Any], target: str = "html", options: Optional[Options] = None) -> WriteResult: ...
+
+def to_html(source: str, options: Optional[Options] = None, *, extensions: Optional[List[ExtensionEntry]] = None, renderers: Optional[Dict[str, Any]] = None, transforms: Optional[List[Callable[[Dict[str, Any]], Dict[str, Any]]]] = None) -> str: ...
+def render_with_host(source: str, options: Optional[Options] = None, *, tree: Optional[Dict[str, Any]] = None, renderers: Optional[Dict[str, Any]] = None, transforms: Optional[List[Callable[[Dict[str, Any]], Dict[str, Any]]]] = None) -> RenderResult: ...
+def to_html_with_extensions(source: str, extensions: List[ExtensionEntry], options: Optional[Options] = None) -> str: ...
 def extensions() -> List[str]:
-    """Return the list of supported extension names."""
+    """The standard extensions the engine enables by name (C2-X-039)."""
     ...
+def to_carve(source: str, options: Optional[Options] = None) -> str: ...
+def to_markdown(source: str) -> str: ...
+def to_plain_text(source: str) -> str: ...
+def to_ansi(source: str) -> str: ...
+def from_html(source: str) -> Dict[str, Any]: ...
+def from_markdown(source: str) -> Dict[str, Any]: ...
+def _panic_probe() -> str: ...

@@ -13,6 +13,9 @@ import re
 import carve
 import pytest
 
+# The 0.1 region helper has no 0.2 engine call.
+pytestmark = pytest.mark.skip(reason="0.1 region helper retired (UPGRADING Part 2); the 0.2 source writer is tested in test_v2")
+
 CORPUS = os.environ.get("CARVE_SPEC_CORPUS")
 
 
