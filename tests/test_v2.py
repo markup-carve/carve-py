@@ -129,17 +129,14 @@ def test_include_dependency_and_root_refusals(tmp_path):
     assert "include-not-found" in [row["code"] for row in missing["diagnostics"]]
 
 
-@pytest.mark.skip(reason="Carve 0.2 Markdown writer pending in carve-rs issues 4327 and 4349")
 def test_pending_markdown_writer():
     assert carve.to_markdown("# H")
 
 
-@pytest.mark.skip(reason="Carve 0.2 plain writer pending in carve-rs issues 4327 and 4349")
 def test_pending_plain_writer():
     assert carve.to_plain_text("# H")
 
 
-@pytest.mark.skip(reason="Carve 0.2 ANSI writer pending in carve-rs issues 4327 and 4349")
 def test_pending_ansi_writer():
     assert carve.to_ansi("# H")
 
