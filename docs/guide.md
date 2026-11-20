@@ -106,3 +106,15 @@ Host transforms and renderers can claim and render other source constructs.
 The 0.1 Markdown importer, stamps, decision trace, source patch tools, and
 region-selection helper have no 0.2 core call. Use the 0.1 branch for those
 workflows until a separate 0.2 host implementation is designed.
+
+Other 0.1 calls map to 0.2 ones:
+
+- `to_html(source, extensions)` with a list as the second argument: the second
+  argument is now an options dictionary. Pass the list as
+  `to_html(source, extensions=[...])` or use `to_html_with_extensions`.
+- `render_ast_json(tree_json)`: `write(tree, "html")` renders a 0.2 tree.
+- `render_with_includes(...)`: `render(source, {"includes": {...}})` with the
+  include root shown under Includes. The 0.1 include limits and caption hints
+  have no 0.2 option.
+- `from_html(source, mode)`: `from_html(source)` and `import_document` take no
+  mode and return the 0.2 import record.
