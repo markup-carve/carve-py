@@ -2,7 +2,7 @@
 
 This `next2` branch binds the unreleased Carve 0.2 Rust engine to Python. It is
 not a package release. Build a wheel from this branch and its pinned engine git
-commit with Rust 1.85 or newer:
+commit with Rust 1.88 or newer:
 
 ```sh
 python -m pip install maturin
