@@ -22,7 +22,6 @@ import re
 import carve
 import pytest
 
-pytestmark = pytest.mark.skip(reason="C2-W-001 Markdown, plain, and ANSI writers pending in carve-rs issues 4327 and 4349")
 
 from corpus_population import require_whole_corpus
 

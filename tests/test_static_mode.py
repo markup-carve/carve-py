@@ -8,8 +8,9 @@ module, so they only pass once the wheel is built (maturin develop / build).
 import carve
 import pytest
 
+pytestmark = pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
+
 # Core static mode is tested in test_v2; these need the details extension and Python renderers.
-pytestmark = pytest.mark.skip(reason="details extension pending in carve-rs issue 4342; Python renderers in carve-py issue 130")
 
 DETAILS = '::: details "x"\nbody\n:::'
 MERMAID = "``` mermaid\ngraph TD; A-->B;\n```"

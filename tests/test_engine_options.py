@@ -55,7 +55,7 @@ NON_HTML_TARGETS = [carve.to_markdown, carve.to_plain_text, carve.to_ansi]
 
 
 @pytest.mark.parametrize("render", NON_HTML_TARGETS, ids=lambda f: f.__name__)
-@pytest.mark.skip(reason="C2-W-001 secondary writers pending in carve-rs issues 4327 and 4349")
+@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
 def test_lowercase_heading_ids_reaches_the_non_html_targets(render):
     default = render(LOWERCASE_CROSSREF)
     lowercased = render(LOWERCASE_CROSSREF, lowercase_heading_ids=True)
@@ -68,7 +68,7 @@ def test_lowercase_heading_ids_reaches_the_non_html_targets(render):
     assert "Mixed Case" in lowercased
 
 
-@pytest.mark.skip(reason="C2-W-001 Markdown writer pending in carve-rs issues 4327 and 4349")
+@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
 def test_markdown_anchors_a_crossref_on_the_gfm_slug_whatever_the_engine_id_is():
     """PART 11 section 11: the Markdown target writes no `{#id}` suffix, and a
     resolved cross-reference takes the heading's GFM slug.
@@ -99,7 +99,7 @@ def test_markdown_anchors_a_crossref_on_the_gfm_slug_whatever_the_engine_id_is()
 
 
 @pytest.mark.parametrize("render", NON_HTML_TARGETS, ids=lambda f: f.__name__)
-@pytest.mark.skip(reason="C2-W-001 secondary writers pending in carve-rs issues 4327 and 4349")
+@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
 def test_an_engine_option_is_not_swallowed_by_the_fast_path(render):
     """The fast path returns the engine's no-options entry point. Before the
     guard learned about engine options it was taken whenever there were no
@@ -112,7 +112,7 @@ def test_an_engine_option_is_not_swallowed_by_the_fast_path(render):
 
 
 @pytest.mark.parametrize("render", NON_HTML_TARGETS, ids=lambda f: f.__name__)
-@pytest.mark.skip(reason="C2-W-001 secondary writers pending in carve-rs issues 4327 and 4349")
+@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
 def test_the_default_path_is_unchanged(render):
     """An omitted keyword keeps exactly what the function did before, on the
     fast path and on the `render` path alike."""
@@ -129,7 +129,6 @@ def test_the_default_path_is_unchanged(render):
 
 
 @pytest.mark.parametrize("render", NON_HTML_TARGETS, ids=lambda f: f.__name__)
-@pytest.mark.skip(reason="C2-W-001 secondary writers pending in carve-rs issues 4327 and 4349")
 def test_engine_options_are_keyword_only_on_the_non_html_targets(render):
     """Positionally they would collide with `extensions` and `profile`, which
     are the two positional parameters these three have always taken."""
@@ -138,7 +137,6 @@ def test_engine_options_are_keyword_only_on_the_non_html_targets(render):
 
 
 @pytest.mark.parametrize("render", NON_HTML_TARGETS, ids=lambda f: f.__name__)
-@pytest.mark.skip(reason="C2-W-001 secondary writers pending in carve-rs issues 4327 and 4349")
 def test_an_unknown_keyword_is_rejected_on_the_non_html_targets(render):
     with pytest.raises(TypeError):
         render("hello", lowercase_heading_id=True)

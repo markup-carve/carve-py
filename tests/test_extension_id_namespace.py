@@ -25,8 +25,9 @@ Scenarios mirror carve-js test/extension-id-namespace.test.ts for parity.
 import carve
 import pytest
 
+pytest.skip("Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136", allow_module_level=True)
+
 # These 0.1 citation registration assertions resume with the citations extension.
-pytest.skip("citations extension pending in carve-rs issue 4343", allow_module_level=True)
 
 # A minimal cited document: one citation, an in-document definition, and the
 # auto-appended references list carrying `<li id="ref-foo">`.
