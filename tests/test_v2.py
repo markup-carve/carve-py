@@ -77,6 +77,10 @@ def test_standard_extension_selection():
     html = carve.to_html(source, extensions=["carve.tabs"], renderers={"carve.tabs": "standard"})
     assert html == carve.render(source, {"extensions": ["carve.tabs"], "renderers": {"carve.tabs": "standard"}})["html"]
     assert carve.to_html_with_extensions(":wiki[Page]", ["carve.wiki"]) == "<p>Page</p>"
+    for name in carve.extensions():
+        carve.to_html("Hi", extensions=[name])
+    details = carve.to_html("::: details\nBody\n:::\n", extensions=["carve.details"], renderers={"carve.details": "standard"})
+    assert "<details>" in details
 
 
 def test_extension_selection_refusals():
@@ -85,6 +89,8 @@ def test_extension_selection_refusals():
     assert unknown.value.name == "CarveOptionError"
     with pytest.raises(carve.CarveError, match="C2-T-010"):
         carve.to_html("Hi", renderers={"carve.tabs": lambda node: ""})
+    with pytest.raises(carve.CarveError, match="C2-T-010"):
+        carve.to_html("Hi", renderers={"carve.mathBlock": lambda node: ""})
 
 
 def test_removed_markdown_import_is_explicit():
