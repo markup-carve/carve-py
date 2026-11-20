@@ -88,6 +88,14 @@ def test_navigation_options_reach_each_extension(name, options, source, visible)
     assert after != before
 
 
+def test_link_policy_allows_explicit_unrestricted_lists_and_rejects_duplicate_spellings():
+    entry = {"name": "carve.linkPolicy", "options": {"allowedSchemes": None, "allowedDomains": None}}
+    assert '<a href="https://ext.org">x</a>' in carve.to_html("[x](https://ext.org)\n", extensions=[entry])
+    entry["options"]["allowed_schemes"] = ["https"]
+    with pytest.raises(carve.CarveError, match="given twice"):
+        carve.to_html("[x](https://ext.org)\n", extensions=[entry])
+
+
 @pytest.mark.parametrize("name,options", [
     ("carve.mathBlock", {"language": "tex"}),
     ("carve.codeGroup", {"idPrefix": "panels"}),

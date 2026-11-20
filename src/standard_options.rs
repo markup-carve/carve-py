@@ -96,6 +96,17 @@ fn strings(
         .transpose()
 }
 
+fn optional_strings(
+    map: &Map<String, Value>,
+    camel: &str,
+    snake: &str,
+) -> Result<Option<Option<Vec<String>>>, String> {
+    if field(map, camel, snake)?.is_some_and(Value::is_null) {
+        return Ok(Some(None));
+    }
+    Ok(strings(map, camel, snake)?.map(Some))
+}
+
 fn levels(map: &Map<String, Value>) -> Result<Option<Vec<u8>>, String> {
     field(map, "levels", "levels")?
         .map(|value| {
@@ -306,14 +317,14 @@ pub(super) fn register(
                 ],
             )?;
             let mut opts = ext::LinkPolicyOptions::default();
-            if let Some(v) = strings(options, "allowedSchemes", "allowed_schemes")? {
-                opts.allowed_schemes = Some(v);
+            if let Some(v) = optional_strings(options, "allowedSchemes", "allowed_schemes")? {
+                opts.allowed_schemes = v;
             }
             if let Some(v) = strings(options, "deniedSchemes", "denied_schemes")? {
                 opts.denied_schemes = v;
             }
-            if let Some(v) = strings(options, "allowedDomains", "allowed_domains")? {
-                opts.allowed_domains = Some(v);
+            if let Some(v) = optional_strings(options, "allowedDomains", "allowed_domains")? {
+                opts.allowed_domains = v;
             }
             if let Some(v) = strings(options, "deniedDomains", "denied_domains")? {
                 opts.denied_domains = v;
