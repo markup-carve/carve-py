@@ -55,7 +55,7 @@ def test_heading_id_option_reaches_parse_before_writer(render):
     lowered = carve.parse(LOWERCASE_CROSSREF, {'headingIds': 'lower'})['tree']
     assert default['children'][0]['generatedId'] == 'Mixed-Case'
     assert lowered['children'][0]['generatedId'] == 'mixed-case'
-    target = render.__name__.removeprefix('to_').replace('plain_text', 'plain')
+    target = render.__name__[3:].replace('plain_text', 'plain')
     assert carve.write(lowered, target)['output'] == render(LOWERCASE_CROSSREF)
 
 
@@ -78,7 +78,7 @@ def test_writer_helpers_refuse_retired_heading_option(render):
 
 @pytest.mark.parametrize("render", NON_HTML_TARGETS, ids=lambda f: f.__name__)
 def test_the_default_path_is_unchanged(render):
-    target = render.__name__.removeprefix('to_').replace('plain_text', 'plain')
+    target = render.__name__[3:].replace('plain_text', 'plain')
     assert render(COLLIDING_HEADINGS) == carve.write(carve.parse(COLLIDING_HEADINGS)['tree'], target)['output']
 
 

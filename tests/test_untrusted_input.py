@@ -28,7 +28,13 @@ def test_raw_html_requires_explicit_opt_in_u076():
 
 
 def test_safe_composes_with_extensions():
-    out = carve.to_html(RAW_HTML, {'extensions': ['carve.tabs'], 'rawHtml': False})
+    source = '::: tabs\n::: tab "A"\n' + RAW_HTML + ':::\n:::\n'
+    out = carve.to_html(source, {
+        'extensions': ['carve.tabs'],
+        'renderers': {'carve.tabs': 'standard'},
+        'rawHtml': False,
+    })
+    assert 'class="tabs"' in out
     assert '&lt;script&gt;' in out
     assert '<script>' not in out
 
