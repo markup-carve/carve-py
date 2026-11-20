@@ -32,6 +32,6 @@ pyo3 = { version = "0.27", features = ["abi3-py38", "extension-module"] }
 # Rust engine repository's next2 branch, fetched from the exact commit here.
 # src/lib.rs names it `::carve` because this extension module is also `carve`.
 # This does not publish an engine or a Python package.
-carve = { git = "https://github.com/markup-carve/carve-rs", rev = "19f0453d02b7826bb6acd909ef14285ce76db8f2", package = "carve-lang" }
+carve = { git = "https://github.com/markup-carve/carve-rs", rev = "284c05f30da3a00a0e7a1fd42fea9f5ce430d6dd", package = "carve-lang" }
 
 serde_json = "1"
