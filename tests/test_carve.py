@@ -115,8 +115,12 @@ def test_extensions_list():
     exts = carve.extensions()
     assert isinstance(exts, list)
     assert set(exts) == {
-        'carve.cite', 'carve.imgFence.image', 'carve.imgFence.img',
-        'carve.tabs', 'carve.wiki',
+        'carve.cite', 'carve.codeCallouts', 'carve.codeGroup', 'carve.colorSwatch', 'carve.details',
+        'carve.fencedRender.abc', 'carve.fencedRender.chart', 'carve.fencedRender.d2', 'carve.fencedRender.graphviz',
+        'carve.fencedRender.mermaid', 'carve.fencedRender.plantuml', 'carve.fencedRender.vega-lite', 'carve.fencedRender.wavedrom',
+        'carve.glossary', 'carve.imgFence.image', 'carve.imgFence.img', 'carve.index', 'carve.inlineFootnotesToParentheses',
+        'carve.listTable', 'carve.mathBlock', 'carve.references', 'carve.semanticSpan', 'carve.smartQuotes',
+        'carve.spoiler', 'carve.spoilerBlock', 'carve.tabNormalize', 'carve.tabs', 'carve.wiki',
     }
 
 
