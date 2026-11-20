@@ -49,7 +49,7 @@ dependencies = [
 [[package]]
 name = "carve-lang"
 version = "0.1.14"
-source = "git+https://github.com/markup-carve/carve-rs?rev=48f27d02368df9310c2b2a694076653106a8d0ea#48f27d02368df9310c2b2a694076653106a8d0ea"
+source = "git+https://github.com/markup-carve/carve-rs?rev=19f0453d02b7826bb6acd909ef14285ce76db8f2#19f0453d02b7826bb6acd909ef14285ce76db8f2"
 dependencies = [
  "bumpalo",
  "carve-lang 0.1.14 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -394,7 +394,7 @@ dependencies = [
 name = "python-carve"
 version = "0.1.13"
 dependencies = [
- "carve-lang 0.1.14 (git+https://github.com/markup-carve/carve-rs?rev=48f27d02368df9310c2b2a694076653106a8d0ea)",
+ "carve-lang 0.1.14 (git+https://github.com/markup-carve/carve-rs?rev=19f0453d02b7826bb6acd909ef14285ce76db8f2)",
  "pyo3",
  "serde_json",
 ]

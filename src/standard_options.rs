@@ -69,6 +69,61 @@ fn count(map: &Map<String, Value>, camel: &str, snake: &str) -> Result<Option<us
         .transpose()
 }
 
+fn small_count(map: &Map<String, Value>, camel: &str, snake: &str) -> Result<Option<u8>, String> {
+    count(map, camel, snake)?
+        .map(|value| u8::try_from(value).map_err(|_| format!("option {camel} is too large")))
+        .transpose()
+}
+
+fn strings(
+    map: &Map<String, Value>,
+    camel: &str,
+    snake: &str,
+) -> Result<Option<Vec<String>>, String> {
+    field(map, camel, snake)?
+        .map(|value| {
+            value
+                .as_array()
+                .ok_or_else(|| format!("option {camel} must be a list"))?
+                .iter()
+                .map(|item| {
+                    item.as_str()
+                        .map(str::to_string)
+                        .ok_or_else(|| format!("option {camel} must contain strings"))
+                })
+                .collect()
+        })
+        .transpose()
+}
+
+fn optional_strings(
+    map: &Map<String, Value>,
+    camel: &str,
+    snake: &str,
+) -> Result<Option<Option<Vec<String>>>, String> {
+    if field(map, camel, snake)?.is_some_and(Value::is_null) {
+        return Ok(Some(None));
+    }
+    Ok(strings(map, camel, snake)?.map(Some))
+}
+
+fn levels(map: &Map<String, Value>) -> Result<Option<Vec<u8>>, String> {
+    field(map, "levels", "levels")?
+        .map(|value| {
+            value
+                .as_array()
+                .ok_or("option levels must be a list".to_string())?
+                .iter()
+                .map(|item| {
+                    item.as_u64()
+                        .and_then(|n| u8::try_from(n).ok())
+                        .ok_or("option levels must contain small nonnegative integers".to_string())
+                })
+                .collect()
+        })
+        .transpose()
+}
+
 pub(super) fn register(
     host: &mut api::Carve,
     name: &str,
@@ -76,6 +131,216 @@ pub(super) fn register(
     renderer: bool,
 ) -> Result<(), String> {
     let bundle = match name {
+        "carve.externalLinks" => {
+            keys(options, &["target", "rel", "nofollow"])?;
+            let mut opts = ext::ExternalLinksOptions::default();
+            if let Some(v) = string(options, "target", "target")? {
+                opts.target = v;
+            }
+            if let Some(v) = string(options, "rel", "rel")? {
+                opts.rel = v;
+            }
+            if let Some(v) = boolean(options, "nofollow", "nofollow")? {
+                opts.nofollow = v;
+            }
+            Some(ext::external_links(opts))
+        }
+        "carve.headingLevelShift" => {
+            keys(options, &["shift"])?;
+            let mut opts = ext::HeadingLevelShiftOptions::default();
+            if let Some(v) = small_count(options, "shift", "shift")? {
+                opts.shift = v;
+            }
+            Some(ext::heading_level_shift(opts))
+        }
+        "carve.headingPermalinks" => {
+            keys(
+                options,
+                &[
+                    "symbol",
+                    "cssClass",
+                    "css_class",
+                    "ariaLabel",
+                    "aria_label",
+                    "levels",
+                    "prepend",
+                    "showOnHover",
+                    "show_on_hover",
+                    "copyToClipboard",
+                    "copy_to_clipboard",
+                    "lowercaseIds",
+                    "lowercase_ids",
+                ],
+            )?;
+            let mut opts = ext::HeadingPermalinksOptions::default();
+            if let Some(v) = string(options, "symbol", "symbol")? {
+                opts.symbol = v;
+            }
+            if let Some(v) = string(options, "cssClass", "css_class")? {
+                opts.css_class = v;
+            }
+            if let Some(v) = string(options, "ariaLabel", "aria_label")? {
+                opts.aria_label = v;
+            }
+            if let Some(v) = levels(options)? {
+                opts.levels = v;
+            }
+            if let Some(v) = boolean(options, "prepend", "prepend")? {
+                opts.prepend = v;
+            }
+            if let Some(v) = boolean(options, "showOnHover", "show_on_hover")? {
+                opts.show_on_hover = v;
+            }
+            if let Some(v) = boolean(options, "copyToClipboard", "copy_to_clipboard")? {
+                opts.copy_to_clipboard = v;
+            }
+            if let Some(v) = boolean(options, "lowercaseIds", "lowercase_ids")? {
+                opts.lowercase_ids = v;
+            }
+            Some(ext::heading_permalinks(opts))
+        }
+        "carve.headingNumbers" => {
+            keys(options, &["minLevel", "min_level", "label", "crossref"])?;
+            let mut opts = ext::HeadingNumbersOptions::default();
+            if let Some(v) = small_count(options, "minLevel", "min_level")? {
+                opts.min_level = v;
+            }
+            if let Some(v) = string(options, "label", "label")? {
+                opts.label = v;
+            }
+            if let Some(v) = choice(
+                options,
+                "crossref",
+                "crossref",
+                &["number", "number-title", "numberTitle", "title"],
+            )? {
+                opts.crossref = match v {
+                    "number" => ext::CrossrefStyle::Number,
+                    "title" => ext::CrossrefStyle::Title,
+                    _ => ext::CrossrefStyle::NumberTitle,
+                };
+            }
+            Some(ext::heading_numbers(opts))
+        }
+        "carve.headingReference" => {
+            keys(options, &["cssClass", "css_class"])?;
+            let mut opts = ext::HeadingReferenceOptions::default();
+            if let Some(v) = string(options, "cssClass", "css_class")? {
+                opts.css_class = v;
+            }
+            Some(ext::heading_reference(opts))
+        }
+        "carve.toc" => {
+            keys(
+                options,
+                &[
+                    "minLevel",
+                    "min_level",
+                    "maxLevel",
+                    "max_level",
+                    "listType",
+                    "list_type",
+                    "cssClass",
+                    "css_class",
+                    "position",
+                    "collapsible",
+                    "summary",
+                    "open",
+                ],
+            )?;
+            let mut opts = ext::TableOfContentsOptions::default();
+            if let Some(v) = small_count(options, "minLevel", "min_level")? {
+                opts.min_level = v;
+            }
+            if let Some(v) = small_count(options, "maxLevel", "max_level")? {
+                opts.max_level = v;
+            }
+            if let Some(v) = choice(options, "listType", "list_type", &["ul", "ol"])? {
+                opts.list_type = if v == "ol" {
+                    ext::ListType::Ol
+                } else {
+                    ext::ListType::Ul
+                };
+            }
+            if let Some(v) = string(options, "cssClass", "css_class")? {
+                opts.css_class = v;
+            }
+            if let Some(v) = choice(options, "position", "position", &["top", "bottom"])? {
+                opts.position = if v == "bottom" {
+                    ext::Position::Bottom
+                } else {
+                    ext::Position::Top
+                };
+            }
+            if let Some(v) = boolean(options, "collapsible", "collapsible")? {
+                opts.collapsible = v;
+            }
+            if let Some(v) = string(options, "summary", "summary")? {
+                opts.summary = v;
+            }
+            if let Some(v) = boolean(options, "open", "open")? {
+                opts.open = v;
+            }
+            Some(ext::table_of_contents(opts))
+        }
+        "carve.tocPlacement" => {
+            keys(options, &[])?;
+            Some(ext::toc_placement())
+        }
+        "carve.autolink" => {
+            keys(options, &["allowedSchemes", "allowed_schemes"])?;
+            let mut opts = ext::AutolinkOptions::default();
+            if let Some(v) = strings(options, "allowedSchemes", "allowed_schemes")? {
+                opts.allowed_schemes = v;
+            }
+            Some(ext::autolink(opts))
+        }
+        "carve.linkPolicy" => {
+            keys(
+                options,
+                &[
+                    "allowedSchemes",
+                    "allowed_schemes",
+                    "deniedSchemes",
+                    "denied_schemes",
+                    "allowedDomains",
+                    "allowed_domains",
+                    "deniedDomains",
+                    "denied_domains",
+                    "allowExternal",
+                    "allow_external",
+                    "allowInternal",
+                    "allow_internal",
+                    "rel",
+                    "baseHost",
+                    "base_host",
+                ],
+            )?;
+            let mut opts = ext::LinkPolicyOptions::default();
+            if let Some(v) = optional_strings(options, "allowedSchemes", "allowed_schemes")? {
+                opts.allowed_schemes = v;
+            }
+            if let Some(v) = strings(options, "deniedSchemes", "denied_schemes")? {
+                opts.denied_schemes = v;
+            }
+            if let Some(v) = optional_strings(options, "allowedDomains", "allowed_domains")? {
+                opts.allowed_domains = v;
+            }
+            if let Some(v) = strings(options, "deniedDomains", "denied_domains")? {
+                opts.denied_domains = v;
+            }
+            if let Some(v) = boolean(options, "allowExternal", "allow_external")? {
+                opts.allow_external = v;
+            }
+            if let Some(v) = boolean(options, "allowInternal", "allow_internal")? {
+                opts.allow_internal = v;
+            }
+            if let Some(v) = strings(options, "rel", "rel")? {
+                opts.rel = v;
+            }
+            opts.base_host = string(options, "baseHost", "base_host")?;
+            Some(ext::link_policy(opts))
+        }
         "carve.wiki" => {
             keys(
                 options,

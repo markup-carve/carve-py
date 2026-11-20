@@ -3,6 +3,14 @@ import pytest
 
 
 OPTIONS = {
+    "carve.headingPermalinks": {"symbol": "#"},
+    "carve.toc": {"listType": "ol"},
+    "carve.headingNumbers": {"minLevel": 2},
+    "carve.headingLevelShift": {"shift": 2},
+    "carve.headingReference": {"cssClass": "xref"},
+    "carve.externalLinks": {"rel": "nofollow"},
+    "carve.autolink": {"allowedSchemes": ["https"]},
+    "carve.linkPolicy": {"rel": ["nofollow"]},
     "carve.wiki": {"css_class": "links", "new_window": True},
     "carve.mathBlock": {"language": "tex"},
     "carve.codeGroup": {"idPrefix": "panels"},
@@ -63,6 +71,31 @@ def test_configured_option_has_a_visible_effect(name, options, source, visible):
     assert after != before
 
 
+@pytest.mark.parametrize("name,options,source,visible", [
+    ("carve.headingPermalinks", {"symbol": "#"}, "# Hi\n", ">#</a>"),
+    ("carve.toc", {"listType": "ol"}, "# Hi\n", "<ol>"),
+    ("carve.headingNumbers", {"minLevel": 2}, "# Hi\n\n## Second\n", '<span class="section-number">1</span> Second'),
+    ("carve.headingLevelShift", {"shift": 2}, "# Hi\n", "<h3>"),
+    ("carve.headingReference", {"cssClass": "xref"}, "# Hi\n\n[Hi][]\n", 'class="xref"'),
+    ("carve.externalLinks", {"rel": "nofollow"}, "[x](https://ext.org)\n", 'rel="nofollow"'),
+    ("carve.autolink", {"allowedSchemes": ["https"]}, "mailto:x@y.org https://x.org\n", "https://x.org"),
+    ("carve.linkPolicy", {"rel": ["nofollow"]}, "[x](https://ext.org)\n", 'rel="nofollow"'),
+])
+def test_navigation_options_reach_each_extension(name, options, source, visible):
+    before = carve.to_html(source, extensions=[name])
+    after = carve.to_html(source, extensions=[{"name": name, "options": options}])
+    assert visible in after
+    assert after != before
+
+
+def test_link_policy_allows_explicit_unrestricted_lists_and_rejects_duplicate_spellings():
+    entry = {"name": "carve.linkPolicy", "options": {"allowedSchemes": None, "allowedDomains": None}}
+    assert '<a href="https://ext.org">x</a>' in carve.to_html("[x](https://ext.org)\n", extensions=[entry])
+    entry["options"]["allowed_schemes"] = ["https"]
+    with pytest.raises(carve.CarveError, match="given twice"):
+        carve.to_html("[x](https://ext.org)\n", extensions=[entry])
+
+
 @pytest.mark.parametrize("name,options", [
     ("carve.mathBlock", {"language": "tex"}),
     ("carve.codeGroup", {"idPrefix": "panels"}),
@@ -71,6 +104,7 @@ def test_configured_option_has_a_visible_effect(name, options, source, visible):
     ("carve.index", {"backrefLabel": "Return"}),
     ("carve.tabNormalize", {"width": 4}),
     ("carve.fencedRender.mermaid", {"label": "Flowchart"}),
+    *[(name, options) for name, options in OPTIONS.items() if name.startswith(("carve.heading", "carve.toc", "carve.external", "carve.autolink", "carve.linkPolicy"))],
 ])
 def test_unknown_option_is_a_typed_option_error_for_each_configurable_family(name, options):
     with pytest.raises(carve.CarveError, match="unknown option misspelled") as raised:
