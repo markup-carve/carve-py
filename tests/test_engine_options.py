@@ -36,96 +36,50 @@ def test_unknown_keyword_is_rejected_by_python():
         carve.to_html("hello", lowercase_heading_id=True)
 
 
-# --- The non-HTML targets take the engine options too (#53) -----------------
+# --- The 0.2 parse options and export entry ------------------------------
 #
-# `to_markdown`, `to_plain_text` and `to_ansi` hardcoded `EngineOptions::default()`
-# until this landed, so nothing above reached them. Two headings differing only
-# in case is what makes `lowercase_heading_ids` visible in a target that emits
-# no ids of its own: the ids are `Foo` and `FOO` by default, and lowercasing
-# collides them, so the second is deduplicated and both ids move.
+# Heading IDs are chosen during parse. The three export helpers use the tree
+# writer, while parse options travel through the 0.2 parse call.
 COLLIDING_HEADINGS = "# Foo\n\n## FOO\n\nSee </#foo> and </#FOO>.\n"
 
-# Cross-references compare case exactly (carve-rs#2320), so a crossref spelled
-# in lower case resolves ONLY once the option has lowercased the heading's id.
-# That makes one document show the option arriving on a target twice over: the
-# marker is still literal by default and has become a link with the option on.
+# The lower-case reference supplies a source that exposes the heading ID
+# option in the parsed tree.
 LOWERCASE_CROSSREF = "# Mixed Case\n\nSee </#mixed-case> here.\n"
 
 NON_HTML_TARGETS = [carve.to_markdown, carve.to_plain_text, carve.to_ansi]
 
 
 @pytest.mark.parametrize("render", NON_HTML_TARGETS, ids=lambda f: f.__name__)
-@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
-def test_lowercase_heading_ids_reaches_the_non_html_targets(render):
-    default = render(LOWERCASE_CROSSREF)
-    lowercased = render(LOWERCASE_CROSSREF, lowercase_heading_ids=True)
-    assert default != lowercased
-    # Unresolved, the crossref reaches the target as its literal `</#...>`
-    # spelling; resolved, it is link text. Asserting the marker's presence and
-    # absence pins the DIRECTION, which a bare inequality would not.
-    assert "</#mixed-case>" in default
-    assert "</#mixed-case>" not in lowercased
-    assert "Mixed Case" in lowercased
+def test_heading_id_option_reaches_parse_before_writer(render):
+    default = carve.parse(LOWERCASE_CROSSREF)['tree']
+    lowered = carve.parse(LOWERCASE_CROSSREF, {'headingIds': 'lower'})['tree']
+    assert default['children'][0]['generatedId'] == 'Mixed-Case'
+    assert lowered['children'][0]['generatedId'] == 'mixed-case'
+    target = render.__name__.removeprefix('to_').replace('plain_text', 'plain')
+    assert carve.write(lowered, target)['output'] == render(LOWERCASE_CROSSREF)
 
 
-@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
-def test_markdown_anchors_a_crossref_on_the_gfm_slug_whatever_the_engine_id_is():
-    """PART 11 section 11: the Markdown target writes no `{#id}` suffix, and a
-    resolved cross-reference takes the heading's GFM slug.
-
-    So `lowercase_heading_ids` cannot reach this anchor, and that is the point:
-    the slug is the one a GFM reader computes for itself, which is lower case
-    whatever id scheme the engine uses for HTML. Asserting both targets together
-    is what keeps this from being read as the option going missing
-    (markup-carve/carve-rs#2014)."""
-    # A crossref resolves only against the id its configuration produces
-    # (carve-rs#2320), so each case is written with the spelling that matches:
-    # `Mixed-Case` by default, `mixed-case` once the option lowercases it. The
-    # ANCHOR is `#mixed-case` either way, which is the claim being made.
-    for source, keywords in (
-        ("# Mixed Case\n\nSee </#Mixed-Case> here.\n", {}),
-        ("# Mixed Case\n\nSee </#mixed-case> here.\n", {"lowercase_heading_ids": True}),
-    ):
-        markdown = carve.to_markdown(source, **keywords)
-        assert "{#" not in markdown
-        assert "(#mixed-case)" in markdown
-        assert "</#" not in markdown
-    # The default engine id is NOT the anchor the Markdown target wrote, which
-    # is what makes the pair above a target rule rather than a coincidence.
-    assert 'id="Mixed-Case"' in carve.to_html("# Mixed Case\n")
-    assert 'id="mixed-case"' in carve.to_html(
-        "# Mixed Case\n", lowercase_heading_ids=True
-    )
+def test_markdown_writer_reaches_the_public_tree():
+    source = '# Mixed Case\n\nSee </#Mixed-Case> here.\n'
+    tree = carve.parse(source)['tree']
+    assert tree['children'][0]['generatedId'] == 'Mixed-Case'
+    assert carve.write(tree, 'markdown')['output'] == carve.to_markdown(source)
+    assert '# Mixed Case' in carve.to_markdown(source)
 
 
 @pytest.mark.parametrize("render", NON_HTML_TARGETS, ids=lambda f: f.__name__)
-@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
-def test_an_engine_option_is_not_swallowed_by_the_fast_path(render):
-    """The fast path returns the engine's no-options entry point. Before the
-    guard learned about engine options it was taken whenever there were no
-    extensions and no profile - which accepted `lowercase_heading_ids` and
-    silently ignored it. This is the case that has NO extensions and NO profile,
-    so it is the one the shortcut would have eaten."""
-    assert render(COLLIDING_HEADINGS, lowercase_heading_ids=True) != render(
-        COLLIDING_HEADINGS
-    )
+def test_writer_helpers_refuse_retired_heading_option(render):
+    tree = carve.parse(COLLIDING_HEADINGS, {'headingIds': 'lower'})['tree']
+    ids = [node['generatedId'] for node in tree['children'] if node['type'] == 'heading']
+    assert ids == ['foo', 'foo-2']
+    with pytest.raises(TypeError, match='lowercase_heading_ids'):
+        render(COLLIDING_HEADINGS, lowercase_heading_ids=True)
 
 
 @pytest.mark.parametrize("render", NON_HTML_TARGETS, ids=lambda f: f.__name__)
-@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
 def test_the_default_path_is_unchanged(render):
-    """An omitted keyword keeps exactly what the function did before, on the
-    fast path and on the `render` path alike."""
-    assert render(COLLIDING_HEADINGS) == render(
-        COLLIDING_HEADINGS,
-        lowercase_heading_ids=None,
-        positions=None,
-        sections=None,
-        source_lines=None,
-        mention_url=None,
-        tag_url=None,
-        profile_base_host=None,
-    )
+    target = render.__name__.removeprefix('to_').replace('plain_text', 'plain')
+    assert render(COLLIDING_HEADINGS) == carve.write(carve.parse(COLLIDING_HEADINGS)['tree'], target)['output']
 
 
 @pytest.mark.parametrize("render", NON_HTML_TARGETS, ids=lambda f: f.__name__)

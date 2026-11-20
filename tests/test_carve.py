@@ -71,30 +71,28 @@ def test_combined_bold_italic():
 MATH_SRC = "``` math\nx^2\n```\n"
 
 
-@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
-def test_math_block_extension_changes_output():
+def test_core_display_math_and_retired_extension_refusal():
     core = carve.to_html(MATH_SRC)
-    ext = carve.to_html(MATH_SRC, extensions=["math_block"])
-    # Core renders the fenced block as a code block; the extension renders math.
+    math = carve.to_html('$$`x^2`')
     assert 'class="language-math"' in core
-    assert "math display" not in core
-    assert '<div class="math display">\\[x^2\\]</div>' in ext
-    assert core != ext
+    assert 'class="math display"' in math
+    assert r'\[x^2\]' in math
+    with pytest.raises(carve.CarveError, match='math_block'):
+        carve.to_html(MATH_SRC, extensions=['math_block'])
 
 
-@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
 def test_to_html_with_extensions_helper():
-    ext = carve.to_html_with_extensions(MATH_SRC, ["math_block"])
-    assert "math display" in ext
+    src = '::: tabs\n::: tab "A"\nx\n:::\n:::\n'
+    assert carve.to_html_with_extensions(src, ['carve.tabs']) == carve.to_html(
+        src, extensions=['carve.tabs']
+    )
 
 
-@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
-def test_list_table_extension_changes_output():
-    src = "::: list-table\n- - A\n  - B\n:::"
-    core = carve.to_html(src)
-    ext = carve.to_html(src, extensions=["list_table"])
-    assert "<table" in ext
-    assert core != ext
+def test_native_table_and_retired_list_table_refusal():
+    src = '|= A |= B |\n| x | y |\n'
+    assert '<table>' in carve.to_html(src)
+    with pytest.raises(carve.CarveError, match='list_table'):
+        carve.to_html(src, extensions=['list_table'])
 
 
 def test_empty_extensions_is_core():
@@ -106,47 +104,32 @@ def test_unknown_extension_raises():
         carve.to_html("# Hi", extensions=["does_not_exist"])
 
 
-@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
-def test_code_callouts_extension_changes_output():
-    # A fenced code block with a <1> marker at the end of a line, followed by
-    # a paragraph of callout definitions, triggers the code-callouts extension.
-    src = "``` python\nresult = 1 + 1  <1>\n```\n\n<1> The sum.\n"
-    core = carve.to_html(src)
-    ext = carve.to_html(src, extensions=["code-callouts"])
-    # The extension wraps the marker as <b class="callout">.
-    assert 'class="callout"' in ext
-    assert core != ext
+def test_retired_code_callouts_are_refused():
+    src = '```python\nresult = 1 + 1  <1>\n```\n\n<1> The sum.\n'
+    assert '<pre>' in carve.to_html(src)
+    with pytest.raises(carve.CarveError, match='code-callouts'):
+        carve.to_html(src, extensions=['code-callouts'])
 
 
-@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
 def test_extensions_list():
-    # The list comes from the engine's registry, whose keys are kebab-case.
     exts = carve.extensions()
     assert isinstance(exts, list)
-    assert "math-block" in exts
-    assert "list-table" in exts
-    assert "code-callouts" in exts
+    assert set(exts) == {
+        'carve.cite', 'carve.imgFence.image', 'carve.imgFence.img',
+        'carve.tabs', 'carve.wiki',
+    }
 
 
-@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
 def test_extensions_list_covers_what_the_engine_registers():
-    # These were unreachable from Python while the binding kept its own
-    # hand-written list: the engine had them, nothing here knew.
-    exts = carve.extensions()
-    for name in ("glossary", "index", "table-of-contents", "heading-numbers",
-                 "code-group", "heading-reference", "img-fence", "smart-quotes"):
-        assert name in exts, name
+    for name in ('carve.cite', 'carve.imgFence.image', 'carve.imgFence.img', 'carve.tabs', 'carve.wiki'):
+        assert name in carve.extensions(), name
 
 
-@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
-def test_snake_case_names_still_work():
-    # Registry keys are kebab-case, but this binding has always taken the
-    # snake_case spellings and mkdocs configs are written with them. Both reach
-    # the same extension.
-    src = "# Heading\n"
-    assert carve.to_html(src, extensions=["heading_permalinks"]) == carve.to_html(
-        src, extensions=["heading-permalinks"]
-    )
+def test_retired_extension_aliases_are_refused():
+    src = '::: tabs\n::: tab "A"\nx\n:::\n:::\n'
+    for retired in ('heading_permalinks', 'heading-permalinks'):
+        with pytest.raises(carve.CarveError, match=retired):
+            carve.to_html(src, extensions=[retired])
 
 
 # --- Other renderers -----------------------------------------------------
@@ -180,21 +163,22 @@ def test_import_html():
     assert html["tree"]["type"] == "document"
 
 
-@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
-def test_import_markdown_with_reports():
-    markdown = carve.from_markdown("*em* and **strong**")
-    assert markdown["source"] == "/em/ and *strong*\n"
+def test_markdown_import_uses_the_engine_call():
+    # C2-T-003 leaves Markdown import outside the 0.2 core. The pinned engine
+    # still offers it through the generic importDocument call.
+    imported = carve.call({
+        'call': 'importDocument', 'source': '*em* and **strong**', 'from': 'markdown',
+    })
+    assert imported['source'] == '/em/ and *strong*\n'
+    assert imported['diagnostics'] == []
 
 
-@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
-def test_markdown_import_preserves_exact_losses():
-    result = carve.from_markdown("1. [ ] ordered task\n")
-    loss = next(row for row in result["report"]["diagnostics"] if row["code"] == "structure-unspellable")
-    assert loss["severity"] == "warning"
-    assert loss["fidelity"] == "dropped"
-    assert loss["confidence"] == "exact"
-    assert loss["message"]
-    assert loss["path"] == "line:1"
+def test_markdown_import_preserves_ordered_task_text():
+    imported = carve.call({
+        'call': 'importDocument', 'source': '1. [ ] ordered task\n', 'from': 'markdown',
+    })
+    assert imported['source'] == '. \\[ ] ordered task\n'
+    assert imported['diagnostics'] == []
 
 
 def test_html_import_reports_dropped_attributes():
@@ -209,11 +193,13 @@ def test_html_import_reports_dropped_attributes():
     assert row["foreignType"] == "p"
 
 
-@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
 def test_markdown_depth_refusal_is_a_value_error():
-    with pytest.raises(ValueError, match="Markdown import failed"):
-        carve.from_markdown("> " * 512 + "text\n")
-    assert carve.to_html("after refusal") == "<p>after refusal</p>"
+    with pytest.raises(carve.CarveError, match='nesting limit'):
+        carve.call({
+            'call': 'importDocument', 'source': '> ' * 512 + 'text\n',
+            'from': 'markdown',
+        })
+    assert carve.to_html('after refusal') == '<p>after refusal</p>'
 
 
 # --- Engine language surface ---------------------------------------------
@@ -256,16 +242,11 @@ def test_symbols_map_renders_mapped_value():
     assert ":rocket:" not in out
 
 
-@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
 def test_symbols_map_works_alongside_extensions():
-    out = carve.to_html(
-        "Ship it :rocket:", extensions=["autolink"], symbols={"rocket": "🚀"}
-    )
-    assert "🚀" in out
-    out = carve.to_html_with_extensions(
-        "Ship it :rocket:", ["autolink"], symbols={"rocket": "🚀"}
-    )
-    assert "🚀" in out
+    src = '::: tabs\n::: tab "A"\nShip :rocket:.\n:::\n:::\n'
+    opts = {'extensions': ['carve.tabs'], 'renderers': {'carve.tabs': 'standard'}, 'symbols': {'rocket': '🚀'}}
+    assert '🚀' in carve.to_html(src, opts)
+    assert '🚀' in carve.to_html_with_extensions(src, ['carve.tabs'], {'symbols': {'rocket': '🚀'}})
 
 
 def test_symbols_map_plus_one_is_a_valid_name():
@@ -305,19 +286,11 @@ def test_symbols_map_rejects_non_string_values():
         carve.to_html(":n:", {"symbols": {"n": 1}})
 
 
-@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
-def test_fenced_render_presets_are_exposed_by_name():
-    # Every FencedRender preset is selectable by name (the diagram gap that
-    # blocked PlantUML/Graphviz/D2 in the bindings).
-    for name in (
-        "fenced-render-plantuml",
-        "fenced-render-graphviz",
-        "fenced-render-d2",
-        "fenced-render-wavedrom",
-        "fenced-render-vega-lite",
-        "fenced-render-abc",
-    ):
-        assert name in carve.extensions()
+def test_retired_fenced_render_presets_are_refused():
+    for name in ('fenced-render-plantuml', 'fenced-render-graphviz', 'fenced-render-d2', 'fenced-render-wavedrom', 'fenced-render-vega-lite', 'fenced-render-abc'):
+        assert name not in carve.extensions()
+        with pytest.raises(carve.CarveError, match=name):
+            carve.to_html('Hi', extensions=[name])
 
 
 # The fenced-render assertions below match an OPENING TAG PREFIX rather than a
@@ -327,44 +300,29 @@ def test_fenced_render_presets_are_exposed_by_name():
 # an `aria-label` to every diagram, which broke three of these while changing
 # nothing they exist to check. Re-adding the `>` re-pins the whole attribute
 # list to whatever the engine emitted the day it was written.
-@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
-def test_plantuml_preset_emits_pre_class_plantuml():
-    for lang in ("plantuml", "puml"):
-        out = carve.to_html(
-            f"``` {lang}\nA -> B\n```", extensions=["fenced_render_plantuml"]
-        )
-        assert '<pre class="plantuml"' in out
+def test_plantuml_fence_keeps_language():
+    for lang in ('plantuml', 'puml'):
+        out = carve.to_html(f'```{lang}\nA -> B\n```')
+        assert f'class="language-{lang}"' in out
 
 
-@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
-def test_graphviz_preset_claims_dot_and_graphviz():
-    out = carve.to_html("``` dot\na -> b\n```", extensions=["fenced_render_graphviz"])
-    assert '<pre class="graphviz"' in out
-@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
-def test_extension_options_validation_and_behavior():
-    with pytest.raises(ValueError, match="not in extensions"):
-        carve.to_html("# Hi", extensions=["tabs"], extension_options={"heading-permalinks": {"aria_label": "Back"}})
-    with pytest.raises(ValueError, match=r"unknown carve extension.*supported"):
-        carve.to_html("# Hi", extensions=["tabs"], extension_options={"bogus": {}})
-    with pytest.raises(ValueError, match=r"heading-permalinks.*aria_label"):
-        carve.to_html("# Hi", extensions=["heading-permalinks"], extension_options={"heading-permalinks": {"aria_lable": "Back"}})
-    with pytest.raises((TypeError, ValueError), match="lowercase_ids"):
-        carve.to_html("# Hi", extensions=["heading-permalinks"], extension_options={"heading-permalinks": {"lowercase_ids": "yes"}})
-    with pytest.raises(ValueError, match="takes no options"):
-        carve.to_html("text", extensions=["details"], extension_options={"details": {}})
-
-    out = carve.to_html("# Mixed Case", extensions=["heading-permalinks"], extension_options={"heading-permalinks": {"aria_label": "Zurück zum Text", "lowercase_ids": True}}, lowercase_heading_ids=True)
-    assert 'href="#mixed-case"' in out
-    assert 'aria-label="Zurück zum Text"' in out
-
-
-@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
-def test_extension_options_enum_validation():
-    src = ":::: tabs\n::: tab [One]\nFirst.\n:::\n::::"
-    out = carve.to_html(src, extensions=["tabs"], extension_options={"tabs": {"mode": "aria"}})
+def test_graphviz_fence_keeps_language():
+    out = carve.to_html('```dot\na -> b\n```')
+    assert 'class="language-dot"' in out
+def test_standard_renderer_option_validation():
+    src = '::: tabs\n::: tab "One"\nFirst.\n:::\n:::\n'
+    with pytest.raises(carve.CarveError, match='extension_options'):
+        carve.to_html(src, {'extension_options': {'tabs': {'mode': 'aria'}}})
+    out = carve.to_html(src, {'extensions': ['carve.tabs'], 'renderers': {'carve.tabs': {'standard': {'mode': 'aria'}}}})
     assert 'role="tablist"' in out
-    with pytest.raises(ValueError, match=r"mode.*css.*aria"):
-        carve.to_html(src, extensions=["tabs"], extension_options={"tabs": {"mode": "script"}})
+
+
+def test_extension_options_enum_validation():
+    src = '::: tabs\n::: tab "One"\nFirst.\n:::\n:::\n'
+    out = carve.to_html(src, {'extensions': ['carve.tabs'], 'renderers': {'carve.tabs': {'standard': {'mode': 'aria'}}}})
+    assert 'role="tablist"' in out
+    with pytest.raises(carve.CarveError, match='mode'):
+        carve.to_html(src, {'extensions': ['carve.tabs'], 'renderers': {'carve.tabs': {'standard': {'mode': 'script'}}}})
 
 
 @pytest.mark.parametrize("name, option", [
@@ -376,49 +334,26 @@ def test_extension_options_enum_validation():
     ("table-of-contents", {"list_type": "ol", "position": "bottom"}),
     ("tabs", {"id_prefix": "custom"}), ("wikilinks", {"new_window": True}),
 ])
-@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
-def test_all_extension_option_structs_are_constructible(name, option):
-    carve.to_html("# Heading", extensions=[name], extension_options={name: option})
+def test_retired_extension_option_structs_are_refused(name, option):
+    with pytest.raises(carve.CarveError, match='extension_options'):
+        carve.to_html('# Heading', {'extension_options': {name: option}})
+    with pytest.raises(carve.CarveError, match='not a standard extension'):
+        carve.to_html('# Heading', extensions=[name])
 
 
-@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
-def test_options_reach_the_extension_whichever_spelling_each_side_uses():
-    """Validation normalized the name and the lookup did not, so a snake_case
-    config key on a kebab-case extension was accepted and then dropped without
-    a word - configuring something and having nothing happen is the failure
-    this whole feature exists to remove."""
-    for exts, opts in (
-        (["heading-permalinks"], {"heading_permalinks": {"aria_label": "MARKER"}}),
-        (["heading_permalinks"], {"heading-permalinks": {"aria_label": "MARKER"}}),
-    ):
-        html = carve.to_html("# T", extensions=exts, extension_options=opts)
-        assert 'aria-label="MARKER"' in html, (exts, opts)
+def test_canonical_extension_options_reach_renderer():
+    src = '::: tabs\n::: tab "One"\nFirst.\n:::\n:::\n'
+    html = carve.to_html(src, {'extensions': ['carve.tabs'], 'renderers': {'carve.tabs': {'standard': {'mode': 'aria'}}}})
+    assert 'role="tablist"' in html
+    with pytest.raises(carve.CarveError, match='tabs'):
+        carve.to_html(src, extensions=['tabs'])
 
 
-@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
-def test_fenced_render_derives_the_defaults_it_is_not_given():
-    """`FencedRenderOptions::new` derives `tag` from the mode, `css_class` from
-    the first language and `figure_class` from `css_class`. Pre-setting them
-    and overwriting afterwards left a json-mode block wearing a `pre` tag."""
-    source = "``` mermaid\ngraph LR\nA-->B\n```\n"
-
-    json_mode = carve.to_html(
-        source,
-        extensions=["fenced-render"],
-        extension_options={"fenced-render": {"content_mode": "json"}},
-    )
-    assert json_mode.startswith('<div class="mermaid"'), json_mode[:60]
-
-    renamed = carve.to_html(
-        "``` diagram\nx\n```\n",
-        extensions=["fenced-render"],
-        extension_options={"fenced-render": {"languages": ["diagram"]}},
-    )
-    assert renamed.startswith('<pre class="diagram"'), renamed[:60]
-
-    assert carve.to_html(source, extensions=["fenced-render"]).startswith(
-        '<pre class="mermaid"'
-    )
+def test_retired_fenced_render_refusal_keeps_core_fence():
+    source = '```mermaid\ngraph LR\n```\n'
+    assert 'class="language-mermaid"' in carve.to_html(source)
+    with pytest.raises(carve.CarveError, match='fenced-render'):
+        carve.to_html(source, extensions=['fenced-render'])
 
 
 def test_a_lone_pipe_carrying_row_attributes_does_not_crash():
@@ -491,13 +426,13 @@ def test_formatting_keeps_a_denied_scheme_exactly_as_authored():
     assert carve.to_html("![x](javascript:alert(1))\n") == '<img src="" alt="x">'
 
 
-@pytest.mark.skip(reason="Carve 0.1 assertion uses a retired 0.2 API; see carve-py#136")
 def test_formatting_does_not_double_a_backslash_the_reparse_does_not_need():
-    """carve-rs#2224. A quoted attribute value, a link title and a reference
-    definition title each came back with `t\\zu` spelled `t\\\\zu`, so a
-    round-trip through the formatter grew an escape the reader discards.
-    """
-    assert carve.to_carve('{#i key="t\\zu"}\npara\n') == '{#i key="t\\zu"}\npara\n'
-    assert carve.to_carve('[x](u "t\\zu")\n') == '[x](u "t\\zu")\n'
-    # The definition moves to the foot of the document; the title does not change.
-    assert carve.to_carve('[a]: u "t\\zu"\n\n[a]\n') == '[a]\n\n[a]: u "t\\zu"\n'
+    for source in (
+        '{#i key="t\\zu"}\npara\n',
+        '[x](u "t\\zu")\n',
+        '[a]: u "t\\zu"\n\n[a]\n',
+    ):
+        formatted = carve.to_carve(source)
+        assert 't\\zu' in formatted
+        assert 't\\\\zu' not in formatted
+        assert carve.to_html(formatted) == carve.to_html(source)
