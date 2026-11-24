@@ -115,7 +115,7 @@ def test_extensions_list():
     exts = carve.extensions()
     assert isinstance(exts, list)
     assert set(exts) == {
-        'carve.autolink', 'carve.externalLinks', 'carve.headingLevelShift', 'carve.headingNumbers',
+        'carve.autolink', 'carve.externalLinks', 'carve.headingNumbers',
         'carve.headingPermalinks', 'carve.headingReference', 'carve.linkPolicy', 'carve.toc', 'carve.tocPlacement',
         'carve.cite', 'carve.codeCallouts', 'carve.codeGroup', 'carve.colorSwatch', 'carve.details',
         'carve.fencedRender.abc', 'carve.fencedRender.chart', 'carve.fencedRender.d2', 'carve.fencedRender.graphviz',
@@ -132,7 +132,7 @@ def test_extensions_list_covers_what_the_engine_registers():
 
 
 def test_navigation_extensions_are_listed_and_selectable():
-    for name in ['carve.autolink', 'carve.externalLinks', 'carve.headingLevelShift', 'carve.headingNumbers', 'carve.headingPermalinks', 'carve.headingReference', 'carve.linkPolicy', 'carve.toc', 'carve.tocPlacement']:
+    for name in ['carve.autolink', 'carve.externalLinks', 'carve.headingNumbers', 'carve.headingPermalinks', 'carve.headingReference', 'carve.linkPolicy', 'carve.toc', 'carve.tocPlacement']:
         assert name in carve.extensions()
         assert carve.to_html("Hi", extensions=[name]) == "<p>Hi</p>"
 

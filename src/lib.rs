@@ -310,7 +310,6 @@ fn write(
 const STANDARD_EXTENSIONS: &[&str] = &[
     "carve.autolink",
     "carve.externalLinks",
-    "carve.headingLevelShift",
     "carve.headingNumbers",
     "carve.headingPermalinks",
     "carve.headingReference",

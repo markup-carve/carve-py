@@ -145,14 +145,6 @@ pub(super) fn register(
             }
             Some(ext::external_links(opts))
         }
-        "carve.headingLevelShift" => {
-            keys(options, &["shift"])?;
-            let mut opts = ext::HeadingLevelShiftOptions::default();
-            if let Some(v) = small_count(options, "shift", "shift")? {
-                opts.shift = v;
-            }
-            Some(ext::heading_level_shift(opts))
-        }
         "carve.headingPermalinks" => {
             keys(
                 options,

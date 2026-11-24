@@ -62,6 +62,13 @@ pub(crate) fn read(value: &Value) -> Result<api::Options, String> {
             "symbols" => out.symbols = string_map(key, item)?,
             "labels" => out.labels.extend(string_map(key, item)?),
             "allowLosses" => out.allow_losses = strings(key, item)?,
+            "headingShift" => {
+                out.heading_shift = item
+                    .as_u64()
+                    .filter(|n| *n <= 5)
+                    .and_then(|n| u8::try_from(n).ok())
+                    .ok_or("headingShift must be a count from 0 to 5")?
+            }
             "maxLosses" => {
                 out.max_losses = item
                     .as_u64()
