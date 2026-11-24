@@ -26,7 +26,7 @@ def test_verified_render_examples():
         and row.get("status") == "verified"
         and isinstance(row.get("expected", {}).get("html"), str)
     ]
-    assert len(selected) >= 273
+    assert len(selected) >= 272
     for row in selected:
         options = row.get("options") or {}
         assert carve.render(row["input"], options)["html"] == row["expected"]["html"], row["id"]

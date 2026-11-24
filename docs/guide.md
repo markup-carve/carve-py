@@ -37,6 +37,15 @@ The 0.1 `safe` keyword becomes `rawHtml` plus `urlPolicy`. The 0.1
 include `sourceLines`, `smartTypography`, `strictLosses`, `alignTables`, and
 the social URL templates in `social` (`mentionUrl`, `tagUrl`).
 
+`headingShift` (a count from 0 to 5) adds that many levels to every rendered
+heading, for pages whose template already writes the title as `<h1>`. Ids and
+the parsed tree keep the authored levels. It replaces the
+`carve.headingLevelShift` extension, which the engine no longer registers.
+
+```python
+carve.render("= Chapter", {"headingShift": 1})["html"]  # the heading renders as <h2>
+```
+
 ## Includes
 
 The engine reads includes only when the caller gives a root. File identity is
