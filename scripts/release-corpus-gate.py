@@ -234,7 +234,11 @@ def run_conformance(carve, conformance):
             for entry in row["expected"].get("diagnostics", [])
         ]
         if not all(code in actual for code in expected):
-            mismatches.append(f"{row['id']} (lint)")
+            mismatches.append(f"{row['id']} (lint: missing a reported code)")
+        elif any(code in actual for code in row["expected"].get("notReported", [])):
+            mismatches.append(f"{row['id']} (lint: reports a code it must not)")
+        elif row["expected"].get("diagnosticsComplete") and sorted(actual) != sorted(expected):
+            mismatches.append(f"{row['id']} (lint: diagnostics are not the complete list)")
     return len(renders) + len(lints), mismatches
 
 
