@@ -35,14 +35,11 @@ FOUR PROPERTIES, each of which some sibling gate is missing.
    green while the shipped engine renders 15.5 percent of the corpus
    differently.
 
-3. IT ASSERTS THE POPULATION, DERIVED. A runner that finds 3 documents and
-   matches 3 of them prints a clean verdict. The expected count comes from
-   `tests/corpus_population.py`, which counts every `carve` fence inside the
-   `::: compare` blocks the spec's example pages DECLARE - the corpus's source rather than the corpus, so
-   emptying the corpus moves one side only. It is imported rather than
-   reimplemented: this package already carried three hand-written floors that
-   disagreed with each other, and a naive grep for the same blocks returns 1049
-   where the real count is 1241.
+3. IT ASSERTS THE POPULATION, DERIVED. A runner that finds 3 cases and
+   matches 3 of them prints a clean verdict. The conformance files must be
+   byte-identical to the copy the pinned carve-rs vendors in
+   `spec-conformance/`, so a truncated or stale spec checkout fails rather than
+   certifying the subset it still holds.
 
 4. IT IS ABLATED. See the pull request that introduced it for the output with a
    diverging engine, a truncated corpus and a substituted wheel.
@@ -50,8 +47,11 @@ FOUR PROPERTIES, each of which some sibling gate is missing.
 
 import argparse
 import hashlib
+import importlib.util
+import json
 import pathlib
 import site
+import subprocess
 import sys
 import sysconfig
 import zipfile
@@ -149,79 +149,131 @@ def check_the_import_is_the_wheel(wheel_path, installed_dir):
     print(f"artifact    : {wheel.name} (sha256 {digest[:16]}), {compared} package members byte-identical to the import")
 
 
-def declared_population(corpus_dir):
-    """Reuse the package's ONE derivation of how big the corpus should be."""
-    sys.path.insert(0, str(REPO_ROOT / "tests"))
-    try:
-        from corpus_population import declared_corpus_size
-    except Exception as error:  # noqa: BLE001
-        fail(f"could not import tests/corpus_population.py: {error!r}")
-    try:
-        return declared_corpus_size(corpus_dir)
-    except Exception as error:  # noqa: BLE001 - it raises pytest.Failed on a missing source page
-        fail(f"the corpus population could not be derived: {error}")
+CONFORMANCE_FILES = ("examples.json", "clause-cases.json")
+
+
+def pinned_revision(engine, manifest, lock):
+    """The carve-rs commit the lock resolved."""
+    path = REPO_ROOT / "scripts" / "pinned-spec-commit.py"
+    spec = importlib.util.spec_from_file_location("pinned_spec_commit", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    pin = module.lock_pin(pathlib.Path(lock))
+    if module.manifest_pin(pathlib.Path(manifest)) != pin:
+        fail(f"{manifest} and {lock} pin different engines.")
+    return module.resolve_pin(pathlib.Path(engine), pin)
+
+
+def check_the_corpus_is_the_engines(conformance, engine, revision):
+    """The spec checkout must hold exactly the conformance files the pinned engine vendors."""
+    for name in CONFORMANCE_FILES:
+        local = conformance / name
+        if not local.is_file():
+            fail(f"{local} is missing. An absent corpus must not certify a publish.")
+        vendored = subprocess.run(
+            ["git", "-C", str(engine), "show", f"{revision}:spec-conformance/{name}"],
+            capture_output=True, check=False,
+        )
+        if vendored.returncode != 0:
+            fail(f"carve-rs {revision[:12]} has no spec-conformance/{name}; it is not a 0.2 engine.")
+        if local.read_bytes() != vendored.stdout:
+            fail(
+                f"{local} differs from spec-conformance/{name} at carve-rs {revision[:12]}. "
+                "The spec checkout is not the corpus the pinned engine was written against."
+            )
+
+
+def run_conformance(carve, conformance):
+    """Verified render examples (HTML and tree) and source-only lint clause cases."""
+    examples = json.loads((conformance / "examples.json").read_text(encoding="utf-8"))["examples"]
+    catalog = json.loads((conformance.parent / "data" / "options.json").read_text(encoding="utf-8"))
+    parse_keys = {
+        option["name"] for option in catalog["options"]
+        if ({option["read_by"]} if isinstance(option["read_by"], str) else set(option["read_by"]))
+        & {"parse", "resolve"}
+    }
+    renders = [
+        row for row in examples
+        if row.get("kind") == "render"
+        and row.get("status") == "verified"
+        and isinstance(row.get("expected", {}).get("html"), str)
+    ]
+    cases = json.loads((conformance / "clause-cases.json").read_text(encoding="utf-8"))["cases"]
+    lints = [
+        row for row in cases
+        if row.get("kind") == "lint" and isinstance(row.get("input"), str)
+        and not row.get("files") and not row.get("options")
+    ]
+    print(f"population  : {len(renders)} verified render examples, {len(lints)} lint clause cases")
+    if not renders or not lints:
+        fail("the conformance corpus selected no cases; it must not certify a publish.")
+
+    mismatches = []
+    for row in renders:
+        options = row.get("options") or {}
+        try:
+            if carve.render(row["input"], options)["html"] != row["expected"]["html"]:
+                mismatches.append(f"{row['id']} (html)")
+                continue
+            tree = row["expected"].get("tree")
+            if isinstance(tree, dict):
+                parse_options = {key: value for key, value in options.items() if key in parse_keys}
+                if carve.parse(row["input"], parse_options)["tree"]["children"] != tree["children"]:
+                    mismatches.append(f"{row['id']} (tree)")
+        except carve.EnginePanicError as panic:
+            # A panic is one more divergence; aborting would leave the rest unmeasured.
+            mismatches.append(f"{row['id']} (engine panic: {str(panic).splitlines()[0]})")
+    for row in lints:
+        try:
+            actual = [entry["code"] for entry in carve.lint(row["input"])["diagnostics"]]
+        except carve.EnginePanicError as panic:
+            mismatches.append(f"{row['id']} (engine panic: {str(panic).splitlines()[0]})")
+            continue
+        expected = [
+            entry if isinstance(entry, str) else entry["code"]
+            for entry in row["expected"].get("diagnostics", [])
+        ]
+        if not all(code in actual for code in expected):
+            mismatches.append(f"{row['id']} (lint: missing a reported code)")
+        elif any(code in actual for code in row["expected"].get("notReported", [])):
+            mismatches.append(f"{row['id']} (lint: reports a code it must not)")
+        elif row["expected"].get("diagnosticsComplete") and sorted(actual) != sorted(expected):
+            mismatches.append(f"{row['id']} (lint: diagnostics are not the complete list)")
+    return len(renders) + len(lints), mismatches
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--wheel", required=True, help="the wheel this release would publish")
-    parser.add_argument("--corpus", required=True, help="<spec>/tests/corpus")
+    parser.add_argument("--conformance", required=True, help="<spec>/spec/0.2/conformance")
+    parser.add_argument("--engine", required=True, help="a full carve-rs checkout")
+    parser.add_argument("--manifest", default=str(REPO_ROOT / "Cargo.toml"))
+    parser.add_argument("--lock", default=str(REPO_ROOT / "Cargo.lock"))
     arguments = parser.parse_args()
 
     carve, installed_dir = import_carve()
     print(f"import      : {carve.__file__} (version {carve.__version__})")
     check_the_import_is_the_wheel(arguments.wheel, installed_dir)
 
-    corpus = pathlib.Path(arguments.corpus)
-    if not corpus.is_dir():
-        fail(f"--corpus {corpus} is not a directory. An absent corpus must not certify a publish.")
+    conformance = pathlib.Path(arguments.conformance)
+    if not conformance.is_dir():
+        fail(f"--conformance {conformance} is not a directory. An absent corpus must not certify a publish.")
+    revision = pinned_revision(arguments.engine, arguments.manifest, arguments.lock)
+    check_the_corpus_is_the_engines(conformance, pathlib.Path(arguments.engine), revision)
+    print(f"corpus      : {conformance} matches the copy carve-rs {revision[:12]} vendors")
 
-    declared = declared_population(arguments.corpus)
-    pairs = [(source, source.with_suffix(".html")) for source in sorted(corpus.glob("*.crv"))]
-    pairs = [(source, expected) for source, expected in pairs if expected.is_file()]
-    print(f"population  : {len(pairs)} pairs found, {declared} declared by the spec's example pages")
-    if len(pairs) != declared:
-        fail(
-            f"the corpus at {corpus} holds {len(pairs)} document pairs where the spec's example "
-            f"pages declare {declared}. A truncated or stale corpus renders cleanly over the "
-            "subset it still contains; it must not certify a publish."
-        )
-
-    sys.path.insert(0, str(REPO_ROOT / "tests"))
-    import engine_behind
-
-    declared = engine_behind.active()
-    absent = sorted(set(declared) - {source.stem for source, _ in pairs})
-    mismatches = [f"{slug} (declared in engine-behind.txt, not in this corpus)" for slug in absent]
-    for source, expected in pairs:
-        want = expected.read_text(encoding="utf-8").rstrip("\n")
-        try:
-            got = carve.to_html(source.read_text(encoding="utf-8")).rstrip("\n")
-        except carve.EnginePanicError as panic:
-            # A panic is one more divergence; aborting would leave the rest unmeasured.
-            mismatches.append(f"{source.stem} (engine panic: {str(panic).splitlines()[0]})")
-            continue
-        if source.stem in declared:
-            # The pinned engine declares this pair; the wheel must render the engine's HTML.
-            if got != declared[source.stem] or got == want:
-                mismatches.append(f"{source.stem} (declared in engine-behind.txt)")
-        elif got != want:
-            mismatches.append(source.stem)
-
+    total, mismatches = run_conformance(carve, conformance)
     if mismatches:
         listed = "\n  ".join(mismatches[:25])
         more = f"\n  ... and {len(mismatches) - 25} more" if len(mismatches) > 25 else ""
         fail(
-            f"{len(mismatches)} of {len(pairs)} corpus documents render differently through this "
-            f"wheel:\n  {listed}{more}\n"
+            f"{len(mismatches)} of {total} conformance cases differ through this wheel:\n  "
+            f"{listed}{more}\n"
             "This artifact must not be published. The carve-rs rev in Cargo.toml is the usual "
             "cause; bump it, commit the regenerated Cargo.lock, and retag."
         )
 
-    print(
-        f"corpus      : {len(pairs) - len(declared)}/{len(pairs)} documents byte-identical, "
-        f"{len(declared)} rendered as the pinned engine declares (engine-behind.txt)"
-    )
+    print(f"conformance : {total}/{total} cases pass through the wheel")
     print("release corpus gate: PASS")
 
 
