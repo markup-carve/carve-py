@@ -71,16 +71,29 @@ Lint diagnostics carry `code`, `severity`, `channel`, `message`, and optional
 `range.endOffset` count UTF-8 bytes, as in the 0.2 tooling contract. Convert
 them before using them as Python string indices.
 
-## Formatting and HTML import
+## Formatting and import
 
 `carve.fmt` and `carve.to_carve` run the canonical Carve writer.
-`carve.import_document` and `carve.from_html` import HTML and return `tree`,
-`source`, and `diagnostics`.
+`carve.import_document(source, source_format)` imports `html` (the default),
+`gfm`, `markdown` (CommonMark only) or `djot` and returns `tree`, `source`, and
+`diagnostics`. `carve.from_html` imports HTML. `carve.from_markdown` imports
+GitHub Flavored Markdown, as the 0.1 importer did; pass `"markdown"` to
+`import_document` only for strict CommonMark, which leaves tables as text.
+These importers are outside the 0.2 specification (C2-T-003).
 
 ```python
 carve.to_carve("# Hi")  # "= Hi\n"
 carve.from_html("<p>Hello <strong>world</strong></p>")["source"]  # "Hello *world*\n"
 ```
+
+## Include regions
+
+`carve.select_include_region(source, name, mode="carve")` returns the 1-based,
+inclusive `(start, end)` content lines of `@region:name` with the engine's
+marker rules, so an editor jumping to a region agrees with include expansion.
+`mode="code"` also reads the source-comment markers. An empty region has
+`end == start - 1`. A missing region, or a malformed or unmatched marker,
+raises `carve.IncludeRegionError` with `rule == "include-region-invalid"`.
 
 ## Standard extensions
 
@@ -126,8 +139,7 @@ glossary, details and other bundled extensions are standard extensions of the
 permalinks, table of contents, external links, and autolink.
 Host transforms and renderers can claim and render other source constructs.
 
-The 0.1 Markdown importer, stamps, decision trace, source patch tools, and
-region-selection helper have no 0.2 core call. Use the 0.1 branch for those
+The 0.1 stamps, decision trace and source patch tools have no 0.2 core call. Use the 0.1 branch for those
 workflows until a separate 0.2 host implementation is designed.
 
 Other 0.1 calls map to 0.2 ones:

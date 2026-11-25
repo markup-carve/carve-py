@@ -13,6 +13,7 @@ use std::sync::Once;
 
 pyo3::create_exception!(carve, EnginePanicError, PyException);
 pyo3::create_exception!(carve, CarveError, PyValueError);
+pyo3::create_exception!(carve, IncludeRegionError, PyValueError);
 
 thread_local! {
     static PANIC_LOCATION: RefCell<Option<String>> = const { RefCell::new(None) };
@@ -278,12 +279,6 @@ fn import_document(
     options: Option<Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
     guard(|| {
-        if source_format != "html" {
-            return Err(option_error(
-                py,
-                format!("{source_format} import is not a Carve 0.2 core format"),
-            ));
-        }
         let req = request(py, "importDocument", Some(&source.0), options)?;
         req.set_item("from", source_format)?;
         execute(py, &req)
@@ -530,13 +525,44 @@ fn from_html(py: Python<'_>, source: Source) -> PyResult<Py<PyAny>> {
     })
 }
 
+/// The 0.1 Markdown importer read GFM, so this imports `from: 'gfm'` (UPGRADING).
 #[pyfunction]
-fn from_markdown(py: Python<'_>, _source: Source) -> PyResult<Py<PyAny>> {
+fn from_markdown(py: Python<'_>, source: Source) -> PyResult<Py<PyAny>> {
     guard(|| {
-        Err(option_error(
-            py,
-            "Markdown import is not part of the Carve 0.2 core importer (C2-T-003)",
-        ))
+        let req = request(py, "importDocument", Some(&source.0), None)?;
+        req.set_item("from", "gfm")?;
+        execute(py, &req)
+    })
+}
+
+#[pyfunction]
+#[pyo3(signature = (source, name, mode = "carve"))]
+fn select_include_region(
+    py: Python<'_>,
+    source: Source,
+    name: &str,
+    mode: &str,
+) -> PyResult<(usize, usize)> {
+    guard(|| {
+        let code = match mode {
+            "carve" => false,
+            "code" => true,
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "mode must be 'carve' or 'code', got {other:?}"
+                )))
+            }
+        };
+        ::carve::include::region_lines(&source.0, name, code).map_err(|reason| {
+            let error = IncludeRegionError::new_err(format!(
+                "include-region-invalid: region {name:?} {reason}"
+            ));
+            error
+                .value(py)
+                .setattr("rule", "include-region-invalid")
+                .expect("IncludeRegionError metadata");
+            error
+        })
     })
 }
 
@@ -550,6 +576,10 @@ fn carve(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     install_panic_hook();
     m.add("CarveError", m.py().get_type::<CarveError>())?;
+    m.add(
+        "IncludeRegionError",
+        m.py().get_type::<IncludeRegionError>(),
+    )?;
     m.add("EnginePanicError", m.py().get_type::<EnginePanicError>())?;
     m.add_function(wrap_pyfunction!(call, m)?)?;
     m.add_function(wrap_pyfunction!(render, m)?)?;
@@ -569,6 +599,7 @@ fn carve(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(to_ansi, m)?)?;
     m.add_function(wrap_pyfunction!(from_html, m)?)?;
     m.add_function(wrap_pyfunction!(from_markdown, m)?)?;
+    m.add_function(wrap_pyfunction!(select_include_region, m)?)?;
     m.add_function(wrap_pyfunction!(_panic_probe, m)?)?;
     Ok(())
 }
