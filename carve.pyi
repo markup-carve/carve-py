@@ -1,6 +1,6 @@
 """Typed Carve 0.2 Python API over the Rust JSON boundary."""
 
-from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, TypedDict, Union
 
 __version__: str
 
@@ -9,6 +9,11 @@ class CarveError(ValueError):
     name: str
     category: str
     status: int
+
+class IncludeRegionError(ValueError):
+    """The region is not opened in the file, or a marker is malformed or unmatched."""
+
+    rule: str
 
 class Range(TypedDict):
     startOffset: int
@@ -71,5 +76,17 @@ def to_markdown(source: str) -> str: ...
 def to_plain_text(source: str) -> str: ...
 def to_ansi(source: str) -> str: ...
 def from_html(source: str) -> Dict[str, Any]: ...
-def from_markdown(source: str) -> Dict[str, Any]: ...
+def from_markdown(source: str) -> Dict[str, Any]:
+    """Import GitHub Flavored Markdown, as `import_document(source, "gfm")`."""
+    ...
+def select_include_region(
+    source: str, name: str, mode: Literal["carve", "code"] = "carve"
+) -> Tuple[int, int]:
+    """The 1-based inclusive content lines of `@region:name` (C2-N-037 to C2-N-043).
+
+    An empty region has `end == start - 1`. `mode="code"` also reads the
+    source-comment markers. Raises `IncludeRegionError` with
+    `rule == "include-region-invalid"`.
+    """
+    ...
 def _panic_probe() -> str: ...

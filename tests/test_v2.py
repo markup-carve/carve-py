@@ -93,9 +93,8 @@ def test_extension_selection_refusals():
         carve.to_html("Hi", renderers={"carve.mathBlock": lambda node: ""})
 
 
-def test_removed_markdown_import_is_explicit():
-    with pytest.raises(carve.CarveError, match="C2-T-003"):
-        carve.from_markdown("# Hi")
+def test_markdown_import_reads_gfm():
+    assert carve.from_markdown("# Hi")["source"] == "= Hi\n"
 
 
 @pytest.mark.parametrize("function,expected", [
