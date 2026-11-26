@@ -1,7 +1,7 @@
 # Carve 0.2 Python guide
 
 This branch uses the unreleased Carve 0.2 engine (the `carve-lang` crate from
-carve-rs `next2`, imported as `carve`) at the git revision in `Cargo.lock`. Its Python functions return dictionaries with the same camelCase
+carve-rs `main`, imported as `carve`) at the git revision in `Cargo.lock`. Its Python functions return dictionaries with the same camelCase
 keys as the public Rust JSON boundary. The [type stub](../carve.pyi) documents
 the records.
 
