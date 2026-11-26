@@ -8,6 +8,28 @@ therefore get an entry of their own.
 
 ## [Unreleased]
 
+### Breaking
+
+- Building the 0.2 binding now requires Rust 1.88 or newer, matching its pinned engine (markup-carve/carve-rs#4444).
+- Bind the Carve 0.2 engine on the `next2` branch through its public JSON API.
+  Render, parse, and lint now return 0.2 result records and accept 0.2 option
+  dictionaries. Raw HTML is disabled by default.
+- Preserve the Markdown, plain-text, and ANSI writer entry points with an
+  explicit "writer not available yet" error while the 0.2 engine ports them.
+
+### Improvements
+
+- Expose typed 0.2 render, parse, lint, format, import, write, and generic call
+  functions. Pin the engine to one unreleased git commit for reproducible
+  wheels.
+- Pin the renamed engine: the `carve-lang` crate on carve-rs `next2` at
+  `7fb7c249`, where `carve2` used to be.
+- `carve.fmt`, `carve.to_carve`, `carve.import_document`, and `carve.from_html`
+  work against the engine's canonical writer and HTML importer.
+- `carve.to_html(extensions=..., renderers=...)` and `carve.extensions()` select
+  the engine's standard extensions (`carve.tabs`, `carve.wiki`, `carve.cite`,
+  `carve.imgFence.img`, `carve.imgFence.image`).
+
 ## [0.1.13] - 2026-11-12
 
 The Python binding moves to the published carve-rs 0.1.14 engine and the 0.1.14 spec: one attach rule for `+`, comment lines erased before layout, braced table alignment, and a canonical writer that writes `***` and native `|=` headers.

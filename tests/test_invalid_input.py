@@ -1,6 +1,7 @@
 """Host strings with lone surrogates reach the engine as replacement characters."""
 
 import carve
+import pytest
 
 
 def test_lone_surrogate_is_replaced_once_across_render_targets():

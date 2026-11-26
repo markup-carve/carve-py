@@ -1,51 +1,19 @@
-"""The corpus gate has to be REACHED, not merely present.
-
-``test_corpus.py``, ``test_corpus_ast.py`` and ``test_non_html_targets.py`` all
-hang off one environment variable, and every one of them declares
-
-    pytestmark = pytest.mark.skipif(not CORPUS, reason=...)
-
-That skip is a convenience for a plain checkout without the spec repo, and it is
-a hole in CI. All three modules are reached through a single ``env:`` block in
-``.github/workflows/ci.yml``; delete it, rename the variable, or move the pytest
-step to a job that never checks the spec out, and every corpus assertion stops
-running while ``pytest -q`` still exits 0. The build goes green having compared
-nothing - the variant-1 dead check catalogued in markup-carve/carve#755, and the
-shape hugo-carve shipped, where ci.yml skipped the corpus test in silence.
-
-Measured on this package before this file existed: with CARVE_SPEC_CORPUS unset,
-``pytest -q tests/test_corpus.py tests/test_corpus_ast.py
-tests/test_non_html_targets.py`` printed ``16 skipped`` and exited 0, over an
-engine pin that was diverging on 75 of the spec's 1239 documents at the time.
-
-So the skip is kept exactly where it is useful and refused where it is
-dangerous. This test carries no skipif of its own: a CI runner that gets here
-without a corpus is a wiring failure, and it fails rather than reporting a pass.
-"""
+"""Keep the 0.2 conformance test reachable in CI."""
 
 import os
 import pathlib
 
-CORPUS = os.environ.get("CARVE_SPEC_CORPUS")
 
-# GitHub Actions sets both; `CI` alone covers other runners.
+EXAMPLES = os.environ.get("CARVE_SPEC2_EXAMPLES")
 IN_CI = os.environ.get("GITHUB_ACTIONS") == "true" or os.environ.get("CI") == "true"
 
 
-def test_ci_always_has_the_corpus_wired_up():
+def test_ci_always_has_the_corpus_wired_up_c2_t005():
     if not IN_CI:
-        # Local runs legitimately have no spec checkout. Asserting here would
-        # make `pytest` unrunnable outside CI, which is how a guard gets
-        # deleted rather than fixed.
         return
-    assert CORPUS, (
-        "CARVE_SPEC_CORPUS is unset in a CI run. The corpus tests are the only checks that "
-        "measure this binding against the spec, and unset they skip and report success. Set it "
-        'from the spec checkout (see the "Check out the spec corpus that engine was '
-        'written against" step in '
-        ".github/workflows/ci.yml); do not let this run report success."
-    )
-    assert pathlib.Path(CORPUS).is_dir(), (
-        f"CARVE_SPEC_CORPUS={CORPUS} is set in a CI run but is not a directory, so every corpus "
-        "test below it fails at collection or skips. The spec checkout step is misconfigured."
-    )
+    # C2-T-005: the 0.2 calls are checked against the 0.2 JSON conformance
+    # examples and clause cases. The 0.1 source/HTML pair directory is retired.
+    assert EXAMPLES, "CARVE_SPEC2_EXAMPLES is unset in CI, so the 0.2 conformance suite would skip"
+    path = pathlib.Path(EXAMPLES)
+    assert path.is_file(), f"CARVE_SPEC2_EXAMPLES={EXAMPLES} is not a file"
+    assert path.with_name("clause-cases.json").is_file(), "0.2 lint clause cases are missing"
