@@ -29,7 +29,7 @@ pyo3 = { version = "0.27", features = ["abi3-py38", "extension-module"] }
 
 # --- Carve engine dependency ---------------------------------------------
 # The unreleased 0.2 engine is the `carve-lang` crate (library `carve`) on the
-# Rust engine repository's next2 branch, fetched from the exact commit here.
+# Rust engine repository's main branch, fetched from the exact commit here.
 # src/lib.rs names it `::carve` because this extension module is also `carve`.
 # This does not publish an engine or a Python package.
 carve = { git = "https://github.com/markup-carve/carve-rs", rev = "efbd280c26fbed61bea9d3e6d400d063701a1bfb", package = "carve-lang" }

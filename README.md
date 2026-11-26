@@ -1,6 +1,6 @@
 # carve-py on Carve 0.2
 
-This `next2` branch binds the unreleased Carve 0.2 Rust engine to Python. It is
+This `main` branch binds the unreleased Carve 0.2 Rust engine to Python. It is
 not a package release. Build a wheel from this branch and its pinned engine git
 commit with Rust 1.88 or newer:
 
