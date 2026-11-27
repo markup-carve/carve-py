@@ -8,6 +8,8 @@ therefore get an entry of their own.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-27
+
 ### Breaking
 
 - Building the 0.2 binding now requires Rust 1.88 or newer, matching its pinned engine (markup-carve/carve-rs#4444).
@@ -29,6 +31,14 @@ therefore get an entry of their own.
 - `carve.to_html(extensions=..., renderers=...)` and `carve.extensions()` select
   the engine's standard extensions (`carve.tabs`, `carve.wiki`, `carve.cite`,
   `carve.imgFence.img`, `carve.imgFence.image`).
+- `carve.extensions()` lists every standard extension the engine enables,
+  including the nine navigation extensions, and their options are accepted in
+  camelCase or snake_case (#141, #144, #146).
+- `carve.to_html` takes callable `renderers` and ordered `transforms`, and
+  `carve.render_with_host` renders through Python extension hosts (#133).
+- `render()` and `to_html()` accept the `headingShift` option (#149).
+- `carve.select_include_region` and Markdown import are available again on 0.2
+  (#152).
 
 ## [0.1.13] - 2026-11-12
 
@@ -343,7 +353,12 @@ First release.
 - Ship abi3 wheels (`abi3-py38`), so one wheel per platform covers CPython 3.8+,
   with `carve.pyi` type stubs.
 
-[Unreleased]: https://github.com/markup-carve/carve-py/compare/v0.1.9...HEAD
+[Unreleased]: https://github.com/markup-carve/carve-py/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/markup-carve/carve-py/compare/v0.1.13...v0.2.0
+[0.1.13]: https://github.com/markup-carve/carve-py/compare/v0.1.12...v0.1.13
+[0.1.12]: https://github.com/markup-carve/carve-py/compare/v0.1.11...v0.1.12
+[0.1.11]: https://github.com/markup-carve/carve-py/compare/v0.1.10...v0.1.11
+[0.1.10]: https://github.com/markup-carve/carve-py/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/markup-carve/carve-py/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/markup-carve/carve-py/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/markup-carve/carve-py/compare/v0.1.6...v0.1.7
